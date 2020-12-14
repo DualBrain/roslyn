@@ -1,4 +1,6 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -7,9 +9,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
-using Microsoft.CodeAnalysis.Collections;
 using Microsoft.CodeAnalysis.Emit;
+using Microsoft.CodeAnalysis.PooledObjects;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -18,20 +21,21 @@ namespace Microsoft.CodeAnalysis.CSharp
     public class CSharpCommandLineParser : CommandLineParser
     {
         public static CSharpCommandLineParser Default { get; } = new CSharpCommandLineParser();
+        public static CSharpCommandLineParser Script { get; } = new CSharpCommandLineParser(isScriptCommandLineParser: true);
 
-        internal static CSharpCommandLineParser ScriptRunner { get; } = new CSharpCommandLineParser(isScriptRunner: true);
+        private static readonly char[] s_quoteOrEquals = new[] { '"', '=' };
 
-        internal CSharpCommandLineParser(bool isScriptRunner = false)
-            : base(CSharp.MessageProvider.Instance, isScriptRunner)
+        internal CSharpCommandLineParser(bool isScriptCommandLineParser = false)
+            : base(CSharp.MessageProvider.Instance, isScriptCommandLineParser)
         {
         }
 
         protected override string RegularFileExtension { get { return ".cs"; } }
         protected override string ScriptFileExtension { get { return ".csx"; } }
 
-        internal sealed override CommandLineArguments CommonParse(IEnumerable<string> args, string baseDirectory, string sdkDirectoryOpt, string additionalReferenceDirectories)
+        internal sealed override CommandLineArguments CommonParse(IEnumerable<string> args, string baseDirectory, string? sdkDirectory, string? additionalReferenceDirectories)
         {
-            return Parse(args, baseDirectory, sdkDirectoryOpt, additionalReferenceDirectories);
+            return Parse(args, baseDirectory, sdkDirectory, additionalReferenceDirectories);
         }
 
         /// <summary>
@@ -42,58 +46,66 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// <param name="sdkDirectory">The directory to search for mscorlib, or null if not available.</param>
         /// <param name="additionalReferenceDirectories">A string representing additional reference paths.</param>
         /// <returns>a commandlinearguments object representing the parsed command line.</returns>
-        public new CSharpCommandLineArguments Parse(IEnumerable<string> args, string baseDirectory, string sdkDirectory, string additionalReferenceDirectories = null)
+        public new CSharpCommandLineArguments Parse(IEnumerable<string> args, string? baseDirectory, string? sdkDirectory, string? additionalReferenceDirectories = null)
         {
+            Debug.Assert(baseDirectory == null || PathUtilities.IsAbsolute(baseDirectory));
+
             List<Diagnostic> diagnostics = new List<Diagnostic>();
             List<string> flattenedArgs = new List<string>();
-            List<string> scriptArgs = IsScriptRunner ? new List<string>() : null;
-            List<string> responsePaths = IsScriptRunner ? new List<string>() : null;
+            List<string>? scriptArgs = IsScriptCommandLineParser ? new List<string>() : null;
+            List<string>? responsePaths = IsScriptCommandLineParser ? new List<string>() : null;
             FlattenArgs(args, diagnostics, flattenedArgs, scriptArgs, baseDirectory, responsePaths);
 
-            string appConfigPath = null;
+            string? appConfigPath = null;
             bool displayLogo = true;
             bool displayHelp = false;
             bool displayVersion = false;
+            bool displayLangVersions = false;
             bool optimize = false;
             bool checkOverflow = false;
+            NullableContextOptions nullableContextOptions = NullableContextOptions.Disable;
             bool allowUnsafe = false;
             bool concurrentBuild = true;
             bool deterministic = false; // TODO(5431): Enable deterministic mode by default
             bool emitPdb = false;
-            DebugInformationFormat debugInformationFormat = DebugInformationFormat.Pdb;
+            DebugInformationFormat debugInformationFormat = PathUtilities.IsUnixLikePlatform ? DebugInformationFormat.PortablePdb : DebugInformationFormat.Pdb;
             bool debugPlus = false;
-            string pdbPath = null;
-            bool noStdLib = IsScriptRunner; // don't add mscorlib from sdk dir when running scripts
-            string outputDirectory = baseDirectory;
+            string? pdbPath = null;
+            bool noStdLib = IsScriptCommandLineParser; // don't add mscorlib from sdk dir when running scripts
+            string? outputDirectory = baseDirectory;
             ImmutableArray<KeyValuePair<string, string>> pathMap = ImmutableArray<KeyValuePair<string, string>>.Empty;
-            string outputFileName = null;
-            string documentationPath = null;
-            string errorLogPath = null;
+            string? outputFileName = null;
+            string? outputRefFilePath = null;
+            bool refOnly = false;
+            string? generatedFilesOutputDirectory = null;
+            string? documentationPath = null;
+            ErrorLogOptions? errorLogOptions = null;
             bool parseDocumentationComments = false; //Don't just null check documentationFileName because we want to do this even if the file name is invalid.
             bool utf8output = false;
             OutputKind outputKind = OutputKind.ConsoleApplication;
             SubsystemVersion subsystemVersion = SubsystemVersion.None;
             LanguageVersion languageVersion = LanguageVersion.Default;
-            string mainTypeName = null;
-            string win32ManifestFile = null;
-            string win32ResourceFile = null;
-            string win32IconFile = null;
+            string? mainTypeName = null;
+            string? win32ManifestFile = null;
+            string? win32ResourceFile = null;
+            string? win32IconFile = null;
             bool noWin32Manifest = false;
             Platform platform = Platform.AnyCpu;
             ulong baseAddress = 0;
             int fileAlignment = 0;
             bool? delaySignSetting = null;
-            string keyFileSetting = null;
-            string keyContainerSetting = null;
+            string? keyFileSetting = null;
+            string? keyContainerSetting = null;
             List<ResourceDescription> managedResources = new List<ResourceDescription>();
             List<CommandLineSourceFile> sourceFiles = new List<CommandLineSourceFile>();
             List<CommandLineSourceFile> additionalFiles = new List<CommandLineSourceFile>();
+            var analyzerConfigPaths = ArrayBuilder<string>.GetInstance();
             List<CommandLineSourceFile> embeddedFiles = new List<CommandLineSourceFile>();
             bool sourceFilesSpecified = false;
             bool embedAllSourceFiles = false;
             bool resourcesOrModulesSpecified = false;
-            Encoding codepage = null;
-            var checksumAlgorithm = SourceHashAlgorithm.Sha1;
+            Encoding? codepage = null;
+            var checksumAlgorithm = SourceHashAlgorithmUtils.DefaultContentHashAlgorithm;
             var defines = ArrayBuilder<string>.GetInstance();
             List<CommandLineReference> metadataReferences = new List<CommandLineReference>();
             List<CommandLineAnalyzerReference> analyzers = new List<CommandLineAnalyzerReference>();
@@ -105,41 +117,44 @@ namespace Microsoft.CodeAnalysis.CSharp
             var diagnosticOptions = new Dictionary<string, ReportDiagnostic>();
             var noWarns = new Dictionary<string, ReportDiagnostic>();
             var warnAsErrors = new Dictionary<string, ReportDiagnostic>();
-            int warningLevel = 4;
+            int warningLevel = Diagnostic.DefaultWarningLevel;
             bool highEntropyVA = false;
             bool printFullPaths = false;
-            string moduleAssemblyName = null;
-            string moduleName = null;
+            string? moduleAssemblyName = null;
+            string? moduleName = null;
             List<string> features = new List<string>();
-            string runtimeMetadataVersion = null;
+            string? runtimeMetadataVersion = null;
             bool errorEndLocation = false;
             bool reportAnalyzer = false;
+            bool skipAnalyzers = false;
             ArrayBuilder<InstrumentationKind> instrumentationKinds = ArrayBuilder<InstrumentationKind>.GetInstance();
-            CultureInfo preferredUILang = null;
-            string touchedFilesPath = null;
+            CultureInfo? preferredUILang = null;
+            string? touchedFilesPath = null;
             bool optionsEnded = false;
             bool interactiveMode = false;
             bool publicSign = false;
-            string sourceLink = null;
+            string? sourceLink = null;
+            string? ruleSetPath = null;
 
             // Process ruleset files first so that diagnostic severity settings specified on the command line via
             // /nowarn and /warnaserror can override diagnostic severity settings specified in the ruleset file.
-            if (!IsScriptRunner)
+            if (!IsScriptCommandLineParser)
             {
                 foreach (string arg in flattenedArgs)
                 {
-                    string name, value;
+                    string? name, value;
                     if (TryParseOption(arg, out name, out value) && (name == "ruleset"))
                     {
                         var unquoted = RemoveQuotesAndSlashes(value);
 
-                        if (string.IsNullOrEmpty(unquoted))
+                        if (RoslynString.IsNullOrEmpty(unquoted))
                         {
                             AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<text>", name);
                         }
                         else
                         {
-                            generalDiagnosticOption = GetDiagnosticOptionsFromRulesetFile(diagnosticOptions, diagnostics, unquoted, baseDirectory);
+                            ruleSetPath = ParseGenericPathToFile(unquoted, diagnostics, baseDirectory);
+                            generalDiagnosticOption = GetDiagnosticOptionsFromRulesetFile(ruleSetPath, out diagnosticOptions, diagnostics);
                         }
                     }
                 }
@@ -149,10 +164,14 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 Debug.Assert(optionsEnded || !arg.StartsWith("@", StringComparison.Ordinal));
 
-                string name, value;
+                string? name, value;
                 if (optionsEnded || !TryParseOption(arg, out name, out value))
                 {
-                    sourceFiles.AddRange(ParseFileArgument(arg, baseDirectory, diagnostics));
+                    foreach (var path in ParseFileArgument(arg, baseDirectory, diagnostics))
+                    {
+                        sourceFiles.Add(ToCommandLineSourceFile(path));
+                    }
+
                     if (sourceFiles.Count > 0)
                     {
                         sourceFilesSpecified = true;
@@ -170,6 +189,28 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                     case "version":
                         displayVersion = true;
+                        continue;
+
+                    case "langversion":
+                        value = RemoveQuotesAndSlashes(value);
+                        if (RoslynString.IsNullOrEmpty(value))
+                        {
+                            AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Text.Localize(), "/langversion:");
+                        }
+                        else if (value.StartsWith("0", StringComparison.Ordinal))
+                        {
+                            // This error was added in 7.1 to stop parsing versions as ints (behaviour in previous Roslyn compilers), and explicitly
+                            // treat them as identifiers (behaviour in native compiler). This error helps users identify that breaking change.
+                            AddDiagnostic(diagnostics, ErrorCode.ERR_LanguageVersionCannotHaveLeadingZeroes, value);
+                        }
+                        else if (value == "?")
+                        {
+                            displayLangVersions = true;
+                        }
+                        else if (!LanguageVersionFacts.TryParse(value, out languageVersion))
+                        {
+                            AddDiagnostic(diagnostics, ErrorCode.ERR_BadCompatMode, value);
+                        }
                         continue;
 
                     case "r":
@@ -201,12 +242,25 @@ namespace Microsoft.CodeAnalysis.CSharp
 #endif
                 }
 
-                if (IsScriptRunner)
+                if (IsScriptCommandLineParser)
                 {
                     switch (name)
                     {
                         case "-": // csi -- script.csx
                             if (value != null) break;
+                            if (arg == "-")
+                            {
+                                if (Console.IsInputRedirected)
+                                {
+                                    sourceFiles.Add(new CommandLineSourceFile("-", isScript: true, isInputRedirected: true));
+                                    sourceFilesSpecified = true;
+                                }
+                                else
+                                {
+                                    AddDiagnostic(diagnostics, ErrorCode.ERR_StdInOptionProvidedButConsoleInputIsNotRedirected);
+                                }
+                                continue;
+                            }
 
                             // Indicates that the remaining arguments should not be treated as options.
                             optionsEnded = true;
@@ -248,7 +302,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         case "d":
                         case "define":
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<text>", arg);
                                 continue;
@@ -278,7 +332,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             continue;
 
                         case "checksumalgorithm":
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<text>", name);
                                 continue;
@@ -311,9 +365,67 @@ namespace Microsoft.CodeAnalysis.CSharp
                             checkOverflow = false;
                             continue;
 
+                        case "nullable":
+
+                            value = RemoveQuotesAndSlashes(value);
+                            if (value != null)
+                            {
+                                if (value.IsEmpty())
+                                {
+                                    AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Text.Localize(), name);
+                                    continue;
+                                }
+
+                                string loweredValue = value.ToLower();
+                                switch (loweredValue)
+                                {
+                                    case "disable":
+                                        Debug.Assert(loweredValue == nameof(NullableContextOptions.Disable).ToLower());
+                                        nullableContextOptions = NullableContextOptions.Disable;
+                                        break;
+                                    case "enable":
+                                        Debug.Assert(loweredValue == nameof(NullableContextOptions.Enable).ToLower());
+                                        nullableContextOptions = NullableContextOptions.Enable;
+                                        break;
+                                    case "warnings":
+                                        Debug.Assert(loweredValue == nameof(NullableContextOptions.Warnings).ToLower());
+                                        nullableContextOptions = NullableContextOptions.Warnings;
+                                        break;
+                                    case "annotations":
+                                        Debug.Assert(loweredValue == nameof(NullableContextOptions.Annotations).ToLower());
+                                        nullableContextOptions = NullableContextOptions.Annotations;
+                                        break;
+                                    default:
+                                        AddDiagnostic(diagnostics, ErrorCode.ERR_BadNullableContextOption, value);
+                                        break;
+                                }
+                            }
+                            else
+                            {
+                                nullableContextOptions = NullableContextOptions.Enable;
+                            }
+                            continue;
+
+
+                        case "nullable+":
+                            if (value != null)
+                            {
+                                break;
+                            }
+
+                            nullableContextOptions = NullableContextOptions.Enable;
+                            continue;
+
+                        case "nullable-":
+                            if (value != null)
+                                break;
+
+                            nullableContextOptions = NullableContextOptions.Disable;
+                            continue;
+
                         case "instrument":
                             value = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<text>", name);
                             }
@@ -354,7 +466,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         case "preferreduilang":
                             value = RemoveQuotesAndSlashes(value);
 
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<text>", arg);
                                 continue;
@@ -363,7 +475,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             try
                             {
                                 preferredUILang = new CultureInfo(value);
-                                if (CorLightup.Desktop.IsUserCustomCulture(preferredUILang) ?? false)
+                                if ((preferredUILang.CultureTypes & CultureTypes.UserCustomCulture) != 0)
                                 {
                                     // Do not use user custom cultures.
                                     preferredUILang = null;
@@ -379,8 +491,14 @@ namespace Microsoft.CodeAnalysis.CSharp
                             }
 
                             continue;
+
+                        case "nosdkpath":
+                            sdkDirectory = null;
+
+                            continue;
+
                         case "out":
-                            if (string.IsNullOrWhiteSpace(value))
+                            if (RoslynString.IsNullOrWhiteSpace(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, arg);
                             }
@@ -391,6 +509,26 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                             continue;
 
+                        case "refout":
+                            value = RemoveQuotesAndSlashes(value);
+                            if (RoslynString.IsNullOrEmpty(value))
+                            {
+                                AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, arg);
+                            }
+                            else
+                            {
+                                outputRefFilePath = ParseGenericPathToFile(value, diagnostics, baseDirectory);
+                            }
+
+                            continue;
+
+                        case "refonly":
+                            if (value != null)
+                                break;
+
+                            refOnly = true;
+                            continue;
+
                         case "t":
                         case "target":
                             if (value == null)
@@ -398,7 +536,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 break; // force 'unrecognized option'
                             }
 
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.FTL_InvalidTarget);
                             }
@@ -412,7 +550,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         case "moduleassemblyname":
                             value = value != null ? value.Unquote() : null;
 
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<text>", arg);
                             }
@@ -444,7 +582,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         case "platform":
                             value = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<string>", arg);
                             }
@@ -461,7 +599,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             {
                                 break; // force 'unrecognized option'
                             }
-                            else if (string.IsNullOrEmpty(value))
+                            else if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, arg);
                             }
@@ -476,15 +614,26 @@ namespace Microsoft.CodeAnalysis.CSharp
                             }
                             continue;
 
+                        case "generatedfilesout":
+                            if (string.IsNullOrWhiteSpace(value))
+                            {
+                                AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Text.Localize(), arg);
+                            }
+                            else
+                            {
+                                generatedFilesOutputDirectory = ParseGenericPathToFile(value, diagnostics, baseDirectory);
+                            }
+                            continue;
+
                         case "doc":
                             parseDocumentationComments = true;
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Text.Localize(), arg);
                                 continue;
                             }
-                            string unquoted = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(unquoted))
+                            string? unquoted = RemoveQuotesAndSlashes(value);
+                            if (RoslynString.IsNullOrEmpty(unquoted))
                             {
                                 // CONSIDER: This diagnostic exactly matches dev11, but it would be simpler (and more consistent with /out)
                                 // if we just let the next case handle /doc:"".
@@ -572,7 +721,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         case "sourcelink":
                             value = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, arg);
                             }
@@ -757,7 +906,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsNumber, name);
                             }
-                            else if (newWarningLevel < 0 || newWarningLevel > 4)
+                            else if (newWarningLevel < 0)
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_BadWarningLevel, name);
                             }
@@ -799,18 +948,6 @@ namespace Microsoft.CodeAnalysis.CSharp
                             allowUnsafe = false;
                             continue;
 
-                        case "langversion":
-                            value = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(value))
-                            {
-                                AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Text.Localize(), "/langversion:");
-                            }
-                            else if (!TryParseLanguageVersion(value, out languageVersion))
-                            {
-                                AddDiagnostic(diagnostics, ErrorCode.ERR_BadCompatMode, value);
-                            }
-                            continue;
-
                         case "delaysign":
                         case "delaysign+":
                             if (value != null)
@@ -850,13 +987,14 @@ namespace Microsoft.CodeAnalysis.CSharp
                             continue;
 
                         case "keyfile":
+                            value = RemoveQuotesAndSlashes(value);
                             if (string.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, "keyfile");
                             }
                             else
                             {
-                                keyFileSetting = RemoveQuotesAndSlashes(value);
+                                keyFileSetting = value;
                             }
                             // NOTE: Dev11/VB also clears "keycontainer", see also:
                             //
@@ -914,7 +1052,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             ulong newBaseAddress;
                             if (string.IsNullOrEmpty(value) || !TryParseUInt64(value, out newBaseAddress))
                             {
-                                if (string.IsNullOrEmpty(value))
+                                if (RoslynString.IsNullOrEmpty(value))
                                 {
                                     AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsNumber, name);
                                 }
@@ -931,7 +1069,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             continue;
 
                         case "subsystemversion":
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Text.Localize(), "subsystemversion");
                                 continue;
@@ -999,10 +1137,14 @@ namespace Microsoft.CodeAnalysis.CSharp
                         case "pathmap":
                             // "/pathmap:K1=V1,K2=V2..."
                             {
-                                if (value == null)
-                                    break;
+                                unquoted = RemoveQuotesAndSlashes(value);
 
-                                pathMap = pathMap.Concat(ParsePathMap(value, diagnostics));
+                                if (unquoted == null)
+                                {
+                                    break;
+                                }
+
+                                pathMap = pathMap.Concat(ParsePathMap(unquoted, diagnostics));
                             }
                             continue;
 
@@ -1010,7 +1152,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             value = RemoveQuotesAndSlashes(value);
 
                             ushort newAlignment;
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsNumber, name);
                             }
@@ -1030,7 +1172,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         case "pdb":
                             value = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, arg);
                             }
@@ -1046,6 +1188,21 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         case "reportanalyzer":
                             reportAnalyzer = true;
+                            continue;
+
+                        case "skipanalyzers":
+                        case "skipanalyzers+":
+                            if (value != null)
+                                break;
+
+                            skipAnalyzers = true;
+                            continue;
+
+                        case "skipanalyzers-":
+                            if (value != null)
+                                break;
+
+                            skipAnalyzers = false;
                             continue;
 
                         case "nostdlib":
@@ -1068,19 +1225,23 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         case "errorlog":
                             unquoted = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(unquoted))
+                            if (RoslynString.IsNullOrEmpty(unquoted))
                             {
-                                AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, ":<file>", RemoveQuotesAndSlashes(arg));
+                                AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, ErrorLogOptionFormat, RemoveQuotesAndSlashes(arg));
                             }
                             else
                             {
-                                errorLogPath = ParseGenericPathToFile(unquoted, diagnostics, baseDirectory);
+                                errorLogOptions = ParseErrorLogOptions(unquoted, diagnostics, baseDirectory, out bool diagnosticAlreadyReported);
+                                if (errorLogOptions == null && !diagnosticAlreadyReported)
+                                {
+                                    AddDiagnostic(diagnostics, ErrorCode.ERR_BadSwitchValue, unquoted, "/errorlog:", ErrorLogOptionFormat);
+                                }
                             }
                             continue;
 
                         case "appconfig":
                             unquoted = RemoveQuotesAndSlashes(value);
-                            if (string.IsNullOrEmpty(unquoted))
+                            if (RoslynString.IsNullOrEmpty(unquoted))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, ":<text>", RemoveQuotesAndSlashes(arg));
                             }
@@ -1106,23 +1267,51 @@ namespace Microsoft.CodeAnalysis.CSharp
                             continue;
 
                         case "additionalfile":
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<file list>", name);
                                 continue;
                             }
 
-                            additionalFiles.AddRange(ParseSeparatedFileArgument(value, baseDirectory, diagnostics));
+                            foreach (var path in ParseSeparatedFileArgument(value, baseDirectory, diagnostics))
+                            {
+                                additionalFiles.Add(ToCommandLineSourceFile(path));
+                            }
+                            continue;
+
+                        case "analyzerconfig":
+                            if (RoslynString.IsNullOrEmpty(value))
+                            {
+                                AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, "<file list>", name);
+                                continue;
+                            }
+
+                            analyzerConfigPaths.AddRange(ParseSeparatedFileArgument(value, baseDirectory, diagnostics));
                             continue;
 
                         case "embed":
-                            if (string.IsNullOrEmpty(value))
+                            if (RoslynString.IsNullOrEmpty(value))
                             {
                                 embedAllSourceFiles = true;
                                 continue;
                             }
-                            
-                            embeddedFiles.AddRange(ParseSeparatedFileArgument(value, baseDirectory, diagnostics));
+
+                            foreach (var path in ParseSeparatedFileArgument(value, baseDirectory, diagnostics))
+                            {
+                                embeddedFiles.Add(ToCommandLineSourceFile(path));
+                            }
+                            continue;
+
+                        case "-":
+                            if (Console.IsInputRedirected)
+                            {
+                                sourceFiles.Add(new CommandLineSourceFile("-", isScript: false, isInputRedirected: true));
+                                sourceFilesSpecified = true;
+                            }
+                            else
+                            {
+                                AddDiagnostic(diagnostics, ErrorCode.ERR_StdInOptionProvidedButConsoleInputIsNotRedirected);
+                            }
                             continue;
                     }
                 }
@@ -1141,7 +1330,17 @@ namespace Microsoft.CodeAnalysis.CSharp
                 diagnosticOptions[o.Key] = o.Value;
             }
 
-            if (!IsScriptRunner && !sourceFilesSpecified && (outputKind.IsNetModule() || !resourcesOrModulesSpecified))
+            if (refOnly && outputRefFilePath != null)
+            {
+                AddDiagnostic(diagnostics, diagnosticOptions, ErrorCode.ERR_NoRefOutWhenRefOnly);
+            }
+
+            if (outputKind == OutputKind.NetModule && (refOnly || outputRefFilePath != null))
+            {
+                AddDiagnostic(diagnostics, diagnosticOptions, ErrorCode.ERR_NoNetModuleOutputWhenRefOutOrRefOnly);
+            }
+
+            if (!IsScriptCommandLineParser && !sourceFilesSpecified && (outputKind.IsNetModule() || !resourcesOrModulesSpecified))
             {
                 AddDiagnostic(diagnostics, diagnosticOptions, ErrorCode.WRN_NoSources);
             }
@@ -1161,7 +1360,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
 
             // add additional reference paths if specified
-            if (!string.IsNullOrWhiteSpace(additionalReferenceDirectories))
+            if (!string.IsNullOrEmpty(additionalReferenceDirectories))
             {
                 ParseAndResolveReferencePaths(null, additionalReferenceDirectories, baseDirectory, libPaths, MessageID.IDS_LIB_ENV, diagnostics);
             }
@@ -1172,44 +1371,44 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             // Dev11 searches for the key file in the current directory and assembly output directory.
             // We always look to base directory and then examine the search paths.
-            keyFileSearchPaths.Add(baseDirectory);
-            if (baseDirectory != outputDirectory)
+            if (!RoslynString.IsNullOrEmpty(baseDirectory))
+            {
+                keyFileSearchPaths.Add(baseDirectory);
+            }
+
+            if (RoslynString.IsNullOrEmpty(outputDirectory))
+            {
+                AddDiagnostic(diagnostics, ErrorCode.ERR_NoOutputDirectory);
+            }
+            else if (baseDirectory != outputDirectory)
             {
                 keyFileSearchPaths.Add(outputDirectory);
             }
 
             // Public sign doesn't use the legacy search path settings
-            if (publicSign && !string.IsNullOrWhiteSpace(keyFileSetting))
+            if (publicSign && !RoslynString.IsNullOrEmpty(keyFileSetting))
             {
                 keyFileSetting = ParseGenericPathToFile(keyFileSetting, diagnostics, baseDirectory);
             }
 
-            if (sourceLink != null)
+            if (sourceLink != null && !emitPdb)
             {
-                if (!emitPdb || !debugInformationFormat.IsPortable())
-                {
-                    AddDiagnostic(diagnostics, ErrorCode.ERR_SourceLinkRequiresPortablePdb);
-                }
+                AddDiagnostic(diagnostics, ErrorCode.ERR_SourceLinkRequiresPdb);
             }
-            
+
             if (embedAllSourceFiles)
             {
                 embeddedFiles.AddRange(sourceFiles);
             }
 
-            if (embeddedFiles.Count > 0)
+            if (embeddedFiles.Count > 0 && !emitPdb)
             {
-                // Restricted to portable PDBs for now, but the IsPortable condition should be removed
-                // and the error message adjusted accordingly when native PDB support is added.
-                if (!emitPdb || !debugInformationFormat.IsPortable())
-                {
-                    AddDiagnostic(diagnostics, ErrorCode.ERR_CannotEmbedWithoutPdb);
-                }
+                AddDiagnostic(diagnostics, ErrorCode.ERR_CannotEmbedWithoutPdb);
             }
 
             var parsedFeatures = ParseFeatures(features);
 
-            string compilationName;
+            string? compilationName;
             GetCompilationAndModuleNames(diagnostics, outputKind, sourceFiles, sourceFilesSpecified, moduleAssemblyName, ref outputFileName, ref moduleName, out compilationName);
 
             var parseOptions = new CSharpParseOptions
@@ -1217,15 +1416,13 @@ namespace Microsoft.CodeAnalysis.CSharp
                 languageVersion: languageVersion,
                 preprocessorSymbols: defines.ToImmutableAndFree(),
                 documentationMode: parseDocumentationComments ? DocumentationMode.Diagnose : DocumentationMode.None,
-                kind: SourceCodeKind.Regular,
+                kind: IsScriptCommandLineParser ? SourceCodeKind.Script : SourceCodeKind.Regular,
                 features: parsedFeatures
             );
 
-            var scriptParseOptions = parseOptions.WithKind(SourceCodeKind.Script);
-
             // We want to report diagnostics with source suppression in the error log file.
             // However, these diagnostics won't be reported on the command line.
-            var reportSuppressedDiagnostics = errorLogPath != null;
+            var reportSuppressedDiagnostics = errorLogOptions is object;
 
             var options = new CSharpCompilationOptions
             (
@@ -1236,6 +1433,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 usings: usings,
                 optimizationLevel: optimize ? OptimizationLevel.Release : OptimizationLevel.Debug,
                 checkOverflow: checkOverflow,
+                nullableContextOptions: nullableContextOptions,
                 allowUnsafe: allowUnsafe,
                 deterministic: deterministic,
                 concurrentBuild: concurrentBuild,
@@ -1257,7 +1455,8 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             var emitOptions = new EmitOptions
             (
-                metadataOnly: false,
+                metadataOnly: refOnly,
+                includePrivateMembers: !refOnly && outputRefFilePath == null,
                 debugInformationFormat: debugInformationFormat,
                 pdbFilePath: null, // to be determined later
                 outputNameOverride: null, // to be determined later
@@ -1266,34 +1465,51 @@ namespace Microsoft.CodeAnalysis.CSharp
                 fileAlignment: fileAlignment,
                 subsystemVersion: subsystemVersion,
                 runtimeMetadataVersion: runtimeMetadataVersion,
-                instrumentationKinds: instrumentationKinds.ToImmutableAndFree()
+                instrumentationKinds: instrumentationKinds.ToImmutableAndFree(),
+                // TODO: set from /checksumalgorithm (see https://github.com/dotnet/roslyn/issues/24735)
+                pdbChecksumAlgorithm: HashAlgorithmName.SHA256,
+                defaultSourceFileEncoding: codepage
             );
 
             // add option incompatibility errors if any
             diagnostics.AddRange(options.Errors);
+            diagnostics.AddRange(parseOptions.Errors);
+
+            if (nullableContextOptions != NullableContextOptions.Disable && parseOptions.LanguageVersion < MessageID.IDS_FeatureNullableReferenceTypes.RequiredVersion())
+            {
+                diagnostics.Add(new CSDiagnostic(new CSDiagnosticInfo(ErrorCode.ERR_NullableOptionNotAvailable,
+                                                 "nullable", nullableContextOptions, parseOptions.LanguageVersion.ToDisplayString(),
+                                                 new CSharpRequiredLanguageVersion(MessageID.IDS_FeatureNullableReferenceTypes.RequiredVersion())), Location.None));
+            }
+
+            pathMap = SortPathMap(pathMap);
 
             return new CSharpCommandLineArguments
             {
-                IsScriptRunner = IsScriptRunner,
-                InteractiveMode = interactiveMode || IsScriptRunner && sourceFiles.Count == 0,
+                IsScriptRunner = IsScriptCommandLineParser,
+                InteractiveMode = interactiveMode || IsScriptCommandLineParser && sourceFiles.Count == 0,
                 BaseDirectory = baseDirectory,
                 PathMap = pathMap,
                 Errors = diagnostics.AsImmutable(),
                 Utf8Output = utf8output,
                 CompilationName = compilationName,
                 OutputFileName = outputFileName,
+                OutputRefFilePath = outputRefFilePath,
                 PdbPath = pdbPath,
-                EmitPdb = emitPdb,
+                EmitPdb = emitPdb && !refOnly, // silently ignore emitPdb when refOnly is set
                 SourceLink = sourceLink,
-                OutputDirectory = outputDirectory,
+                RuleSetPath = ruleSetPath,
+                OutputDirectory = outputDirectory!, // error produced when null
                 DocumentationPath = documentationPath,
-                ErrorLogPath = errorLogPath,
+                GeneratedFilesOutputDirectory = generatedFilesOutputDirectory,
+                ErrorLogOptions = errorLogOptions,
                 AppConfigPath = appConfigPath,
                 SourceFiles = sourceFiles.AsImmutable(),
                 Encoding = codepage,
                 ChecksumAlgorithm = checksumAlgorithm,
                 MetadataReferences = metadataReferences.AsImmutable(),
                 AnalyzerReferences = analyzers.AsImmutable(),
+                AnalyzerConfigPaths = analyzerConfigPaths.ToImmutableAndFree(),
                 AdditionalFiles = additionalFiles.AsImmutable(),
                 ReferencePaths = referencePaths,
                 SourcePaths = sourcePaths.AsImmutable(),
@@ -1305,9 +1521,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                 DisplayLogo = displayLogo,
                 DisplayHelp = displayHelp,
                 DisplayVersion = displayVersion,
+                DisplayLangVersions = displayLangVersions,
                 ManifestResources = managedResources.AsImmutable(),
                 CompilationOptions = options,
-                ParseOptions = IsScriptRunner ? scriptParseOptions : parseOptions,
+                ParseOptions = parseOptions,
                 EmitOptions = emitOptions,
                 ScriptArguments = scriptArgs.AsImmutableOrEmpty(),
                 TouchedFilesPath = touchedFilesPath,
@@ -1315,22 +1532,23 @@ namespace Microsoft.CodeAnalysis.CSharp
                 ShouldIncludeErrorEndLocation = errorEndLocation,
                 PreferredUILang = preferredUILang,
                 ReportAnalyzer = reportAnalyzer,
+                SkipAnalyzers = skipAnalyzers,
                 EmbeddedFiles = embeddedFiles.AsImmutable()
             };
         }
 
-        private static void ParseAndResolveReferencePaths(string switchName, string switchValue, string baseDirectory, List<string> builder, MessageID origin, List<Diagnostic> diagnostics)
+        private static void ParseAndResolveReferencePaths(string? switchName, string? switchValue, string? baseDirectory, List<string> builder, MessageID origin, List<Diagnostic> diagnostics)
         {
             if (string.IsNullOrEmpty(switchValue))
             {
-                Debug.Assert(!string.IsNullOrEmpty(switchName));
+                RoslynDebug.Assert(!RoslynString.IsNullOrEmpty(switchName));
                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_PathList.Localize(), switchName);
                 return;
             }
 
             foreach (string path in ParseSeparatedPaths(switchValue))
             {
-                string resolvedPath = FileUtilities.ResolveRelativePath(path, baseDirectory);
+                string? resolvedPath = FileUtilities.ResolveRelativePath(path, baseDirectory);
                 if (resolvedPath == null)
                 {
                     AddDiagnostic(diagnostics, ErrorCode.WRN_InvalidSearchPathDir, path, origin.Localize(), MessageID.IDS_DirectoryHasInvalidPath.Localize());
@@ -1346,7 +1564,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static string GetWin32Setting(string arg, string value, List<Diagnostic> diagnostics)
+        private static string? GetWin32Setting(string arg, string? value, List<Diagnostic> diagnostics)
         {
             if (value == null)
             {
@@ -1373,19 +1591,19 @@ namespace Microsoft.CodeAnalysis.CSharp
             OutputKind outputKind,
             List<CommandLineSourceFile> sourceFiles,
             bool sourceFilesSpecified,
-            string moduleAssemblyName,
-            ref string outputFileName,
-            ref string moduleName,
-            out string compilationName)
+            string? moduleAssemblyName,
+            ref string? outputFileName,
+            ref string? moduleName,
+            out string? compilationName)
         {
-            string simpleName;
+            string? simpleName;
             if (outputFileName == null)
             {
                 // In C#, if the output file name isn't specified explicitly, then executables take their
                 // names from the files containing their entrypoints and libraries derive their names from 
                 // their first input files.
 
-                if (!IsScriptRunner && !sourceFilesSpecified)
+                if (!IsScriptCommandLineParser && !sourceFilesSpecified)
                 {
                     AddDiagnostic(diagnostics, ErrorCode.ERR_OutputNeedsName);
                     simpleName = null;
@@ -1401,7 +1619,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                     if (simpleName.Length == 0 && !outputKind.IsNetModule())
                     {
-                        AddDiagnostic(diagnostics, ErrorCode.FTL_InputFileNameTooLong, outputFileName);
+                        AddDiagnostic(diagnostics, ErrorCode.FTL_InvalidInputFileName, outputFileName);
                         outputFileName = simpleName = null;
                     }
                 }
@@ -1412,14 +1630,14 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 if (simpleName.Length == 0)
                 {
-                    AddDiagnostic(diagnostics, ErrorCode.FTL_InputFileNameTooLong, outputFileName);
+                    AddDiagnostic(diagnostics, ErrorCode.FTL_InvalidInputFileName, outputFileName);
                     outputFileName = simpleName = null;
                 }
             }
 
             if (outputKind.IsNetModule())
             {
-                Debug.Assert(!IsScriptRunner);
+                Debug.Assert(!IsScriptCommandLineParser);
 
                 compilationName = moduleAssemblyName;
             }
@@ -1439,7 +1657,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private ImmutableArray<string> BuildSearchPaths(string sdkDirectoryOpt, List<string> libPaths, List<string> responsePathsOpt)
+        private ImmutableArray<string> BuildSearchPaths(string? sdkDirectoryOpt, List<string> libPaths, List<string>? responsePathsOpt)
         {
             var builder = ArrayBuilder<string>.GetInstance();
 
@@ -1461,7 +1679,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             // with references relative to csi.exe (e.g. System.ValueTuple.dll).
             if (responsePathsOpt != null)
             {
-                Debug.Assert(IsScriptRunner);
+                Debug.Assert(IsScriptCommandLineParser);
                 builder.AddRange(responsePathsOpt);
             }
 
@@ -1470,7 +1688,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         public static IEnumerable<string> ParseConditionalCompilationSymbols(string value, out IEnumerable<Diagnostic> diagnostics)
         {
-            Diagnostic myDiagnostic = null;
+            DiagnosticBag outputDiagnostics = DiagnosticBag.GetInstance();
 
             value = value.TrimEnd(null);
             // Allow a trailing semicolon or comma in the options
@@ -1490,15 +1708,13 @@ namespace Microsoft.CodeAnalysis.CSharp
                 {
                     defines.Add(trimmedId);
                 }
-                else if (myDiagnostic == null)
+                else
                 {
-                    myDiagnostic = Diagnostic.Create(CSharp.MessageProvider.Instance, (int)ErrorCode.WRN_DefineIdentifierRequired, trimmedId);
+                    outputDiagnostics.Add(Diagnostic.Create(CSharp.MessageProvider.Instance, (int)ErrorCode.WRN_DefineIdentifierRequired, trimmedId));
                 }
             }
 
-            diagnostics = myDiagnostic == null ? SpecializedCollections.EmptyEnumerable<Diagnostic>()
-                                                : SpecializedCollections.SingletonEnumerable(myDiagnostic);
-
+            diagnostics = outputDiagnostics.ToReadOnlyAndFree();
             return defines.AsEnumerable();
         }
 
@@ -1518,6 +1734,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return Platform.AnyCpu32BitPreferred;
                 case "arm":
                     return Platform.Arm;
+                case "arm64":
+                    return Platform.Arm64;
                 default:
                     AddDiagnostic(diagnostics, ErrorCode.ERR_BadPlatformType, value);
                     return Platform.AnyCpu;
@@ -1552,9 +1770,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static IEnumerable<string> ParseUsings(string arg, string value, IList<Diagnostic> diagnostics)
+        private static IEnumerable<string> ParseUsings(string arg, string? value, IList<Diagnostic> diagnostics)
         {
-            if (value.Length == 0)
+            if (RoslynString.IsNullOrEmpty(value))
             {
                 AddDiagnostic(diagnostics, ErrorCode.ERR_SwitchNeedsString, MessageID.IDS_Namespace1.Localize(), arg);
                 yield break;
@@ -1566,7 +1784,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static IEnumerable<CommandLineAnalyzerReference> ParseAnalyzers(string arg, string value, List<Diagnostic> diagnostics)
+        private static IEnumerable<CommandLineAnalyzerReference> ParseAnalyzers(string arg, string? value, List<Diagnostic> diagnostics)
         {
             if (value == null)
             {
@@ -1587,7 +1805,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static IEnumerable<CommandLineReference> ParseAssemblyReferences(string arg, string value, IList<Diagnostic> diagnostics, bool embedInteropTypes)
+        private static IEnumerable<CommandLineReference> ParseAssemblyReferences(string arg, string? value, IList<Diagnostic> diagnostics, bool embedInteropTypes)
         {
             if (value == null)
             {
@@ -1610,9 +1828,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             // /r:alias=reference;reference      ... error 2034
             // /r:nonidf=reference               ... error 1679
 
-            int eqlOrQuote = value.IndexOfAny(new[] { '"', '=' });
+            int eqlOrQuote = value.IndexOfAny(s_quoteOrEquals);
 
-            string alias;
+            string? alias;
             if (eqlOrQuote >= 0 && value[eqlOrQuote] == '=')
             {
                 alias = value.Substring(0, eqlOrQuote);
@@ -1657,7 +1875,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static void ValidateWin32Settings(string win32ResourceFile, string win32IconResourceFile, string win32ManifestFile, OutputKind outputKind, IList<Diagnostic> diagnostics)
+        private static void ValidateWin32Settings(string? win32ResourceFile, string? win32IconResourceFile, string? win32ManifestFile, OutputKind outputKind, IList<Diagnostic> diagnostics)
         {
             if (win32ResourceFile != null)
             {
@@ -1696,18 +1914,18 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        internal static ResourceDescription ParseResourceDescription(
+        internal static ResourceDescription? ParseResourceDescription(
             string arg,
             string resourceDescriptor,
-            string baseDirectory,
+            string? baseDirectory,
             IList<Diagnostic> diagnostics,
             bool embedded)
         {
-            string filePath;
-            string fullPath;
-            string fileName;
-            string resourceName;
-            string accessibility;
+            string? filePath;
+            string? fullPath;
+            string? fileName;
+            string? resourceName;
+            string? accessibility;
 
             ParseResourceDescription(
                 resourceDescriptor,
@@ -1740,15 +1958,16 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return null;
             }
 
-            if (string.IsNullOrEmpty(filePath))
+            if (RoslynString.IsNullOrWhiteSpace(filePath))
             {
                 AddDiagnostic(diagnostics, ErrorCode.ERR_NoFileSpec, arg);
                 return null;
             }
+            Debug.Assert(!resourceName.IsEmpty()); // see ParseResourceDescription's check on filePath
 
-            if (fullPath == null || string.IsNullOrWhiteSpace(fileName) || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            if (!PathUtilities.IsValidFilePath(fullPath))
             {
-                AddDiagnostic(diagnostics, ErrorCode.FTL_InputFileNameTooLong, filePath);
+                AddDiagnostic(diagnostics, ErrorCode.FTL_InvalidInputFileName, filePath);
                 return null;
             }
 
@@ -1761,65 +1980,24 @@ namespace Microsoft.CodeAnalysis.CSharp
             return new ResourceDescription(resourceName, fileName, dataProvider, isPublic, embedded, checkArgs: false);
         }
 
-        private static bool TryParseLanguageVersion(string str, out LanguageVersion version)
-        {
-            if (str == null)
-            {
-                version = LanguageVersion.Default;
-                return true;
-            }
-
-            switch (str.ToLowerInvariant())
-            {
-                case "iso-1":
-                    version = LanguageVersion.CSharp1;
-                    return true;
-
-                case "iso-2":
-                    version = LanguageVersion.CSharp2;
-                    return true;
-
-                case "7":
-                    version = LanguageVersion.CSharp7;
-                    return true;
-
-                case "default":
-                    version = LanguageVersion.Default;
-                    return true;
-
-                case "latest":
-                    version = LanguageVersion.Latest;
-                    return true;
-
-                default:
-                    // We are likely to introduce minor version numbers after C# 7, thus breaking the
-                    // one-to-one correspondence between the integers and the corresponding
-                    // LanguageVersion enum values. But for compatibility we continue to accept any
-                    // integral value parsed by int.TryParse for its corresponding LanguageVersion enum
-                    // value for language version C# 6 and earlier (e.g. leading zeros are allowed)
-                    int versionNumber;
-                    if (int.TryParse(str, NumberStyles.None, CultureInfo.InvariantCulture, out versionNumber) &&
-                        versionNumber <= 6 &&
-                        ((LanguageVersion)versionNumber).IsValid())
-                    {
-                        version = (LanguageVersion)versionNumber;
-                        return true;
-                    }
-
-                    version = LanguageVersion.Default;
-                    return false;
-            }
-        }
-
         private static IEnumerable<string> ParseWarnings(string value)
         {
             value = value.Unquote();
             string[] values = value.Split(new char[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (string id in values)
             {
-                ushort number;
-                if (ushort.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out number) &&
-                    ErrorFacts.IsWarning((ErrorCode)number))
+                if (string.Equals(id, "nullable", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var errorCode in ErrorFacts.NullableWarnings)
+                    {
+                        yield return errorCode;
+                    }
+
+                    yield return CSharp.MessageProvider.Instance.GetIdForErrorCode((int)ErrorCode.WRN_MissingNonNullTypesContextForAnnotation);
+                    yield return CSharp.MessageProvider.Instance.GetIdForErrorCode((int)ErrorCode.WRN_MissingNonNullTypesContextForAnnotationInGeneratedCode);
+                }
+                else if (ushort.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out ushort number) &&
+                       ErrorFacts.IsWarning((ErrorCode)number))
                 {
                     // The id refers to a compiler warning.
                     yield return CSharp.MessageProvider.Instance.GetIdForErrorCode(number);

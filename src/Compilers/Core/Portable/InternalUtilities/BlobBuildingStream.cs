@@ -1,10 +1,14 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection.Metadata;
+using Microsoft.CodeAnalysis.PooledObjects;
+using Microsoft.CodeAnalysis;
 
 namespace Roslyn.Utilities
 {
@@ -13,8 +17,8 @@ namespace Roslyn.Utilities
     /// </summary>
     internal sealed class BlobBuildingStream : Stream
     {
-        private static ObjectPool<BlobBuildingStream> s_pool = new ObjectPool<BlobBuildingStream>(() => new BlobBuildingStream());
-        private BlobBuilder _builder;
+        private static readonly ObjectPool<BlobBuildingStream> s_pool = new ObjectPool<BlobBuildingStream>(() => new BlobBuildingStream());
+        private readonly BlobBuilder _builder;
 
         /// <summary>
         /// The chunk size to be used by the underlying BlobBuilder.

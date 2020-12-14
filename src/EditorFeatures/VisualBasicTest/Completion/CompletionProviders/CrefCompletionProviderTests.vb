@@ -1,4 +1,6 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports Microsoft.CodeAnalysis.Completion
@@ -10,12 +12,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.Completion.Complet
     Public Class CrefCompletionProviderTests
         Inherits AbstractVisualBasicCompletionProviderTests
 
-        Public Sub New(workspaceFixture As VisualBasicTestWorkspaceFixture)
-            MyBase.New(workspaceFixture)
-        End Sub
-
-        Friend Overrides Function CreateCompletionProvider() As CompletionProvider
-            Return New CrefCompletionProvider()
+        Friend Overrides Function GetCompletionProviderType() As Type
+            Return GetType(CrefCompletionProvider)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
@@ -23,7 +21,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.Completion.Complet
             Dim text = <File>
 Class C
     ''' $$
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Class
 </File>.Value
@@ -36,7 +34,7 @@ End Class
             Dim text = <File>
 Class C
     $$
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Class
 </File>.Value
@@ -48,7 +46,7 @@ End Class
         Public Async Function TestNotOutsideCref3() As Task
             Dim text = <File>
 Class C
-    Sub Foo()
+    Sub Goo()
         Me.$$
     End Sub
 End Class
@@ -66,7 +64,7 @@ Imports System
 ''' <see cref="$$
 ''' </summary>
 Module Program
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Module]]></File>.Value
 
@@ -82,11 +80,11 @@ Imports System
 ''' <see cref="Program.$$"
 ''' </summary>
 Module Program
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Module]]></File>.Value
 
-            Await VerifyItemExistsAsync(text, "Foo()")
+            Await VerifyItemExistsAsync(text, "Goo()")
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
@@ -98,7 +96,7 @@ Imports System
 ''' <see cref="Program(Of $$
 ''' </summary>
 Class Program(Of T)
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Class]]></File>.Value
 
@@ -111,15 +109,15 @@ End Class]]></File>.Value
 Imports System
 
 ''' <summary>
-''' <see cref="Program(Of T).Foo($$"
+''' <see cref="Program(Of T).Goo($$"
 ''' </summary>
 Class Program(Of T)
-    Sub Foo(z as Integer)
+    Sub Goo(z as Integer)
     End Sub
 End Class]]></File>.Value
 
             Await VerifyItemExistsAsync(text, "Integer")
-            Await VerifyItemIsAbsentAsync(text, "Foo(Integer")
+            Await VerifyItemIsAbsentAsync(text, "Goo(Integer")
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
@@ -128,10 +126,10 @@ End Class]]></File>.Value
 Imports System
 
 ''' <summary>
-''' <see cref="Program(Of T).Foo(Integer, $$"
+''' <see cref="Program(Of T).Goo(Integer, $$"
 ''' </summary>
 Class Program(Of T)
-    Sub Foo(z as Integer, q as Integer)
+    Sub Goo(z as Integer, q as Integer)
     End Sub
 End Class]]></File>.Value
 
@@ -144,10 +142,10 @@ End Class]]></File>.Value
 Imports System
 
 ''' <summary>
-''' <see cref="Program(Of T).Foo(Integer, Integer)$$"
+''' <see cref="Program(Of T).Goo(Integer, Integer)$$"
 ''' </summary>
 Class Program(Of T)
-    Sub Foo(z as Integer, q as Integer)
+    Sub Goo(z as Integer, q as Integer)
     End Sub
 End Class]]></File>.Value
 
@@ -159,10 +157,10 @@ End Class]]></File>.Value
 Imports System
 
 ''' <summary>
-''' <see cref="Program(Of T).Foo(Integer, Integer).$$"
+''' <see cref="Program(Of T).Goo(Integer, Integer).$$"
 ''' </summary>
 Class Program(Of T)
-    Sub Foo(z as Integer, q as Integer)
+    Sub Goo(z as Integer, q as Integer)
     End Sub
 End Class]]></File>.Value
 
@@ -176,11 +174,11 @@ End Class]]></File>.Value
 ''' <see cref="Program(Of T).$$"
 ''' </summary>
 Class Program(Of T)
-    Sub Foo(ByRef z As Integer, ByVal x As Integer, ParamArray xx As Integer())
+    Sub Goo(ByRef z As Integer, ByVal x As Integer, ParamArray xx As Integer())
     End Sub
 End Class]]></File>.Value
 
-            Await VerifyItemExistsAsync(text, "Foo(ByRef Integer, Integer, Integer())")
+            Await VerifyItemExistsAsync(text, "Goo(ByRef Integer, Integer, Integer())")
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
@@ -327,7 +325,7 @@ End Class
         Public Async Function TestNoCommitOnParen() As Task
             Dim text = <File><![CDATA[
 ''' <summary>
-''' <see cref="C.$$"/>
+''' <see cref="C.bar$$"/>
 ''' </summary>
 Class C
 Sub bar(x As Integer, y As Integer)
@@ -337,7 +335,7 @@ End Class
 
             Dim expected = <File><![CDATA[
 ''' <summary>
-''' <see cref="C.("/>
+''' <see cref="C.bar("/>
 ''' </summary>
 Class C
 Sub bar(x As Integer, y As Integer)
@@ -345,7 +343,7 @@ End Sub
 End Class
 ]]></File>.Value
 
-            Await VerifyProviderCommitAsync(text, "bar(Integer, Integer)", expected, "("c, "bar")
+            Await VerifyProviderCommitAsync(text, "bar(Integer, Integer)", expected, "("c)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
@@ -353,7 +351,7 @@ End Class
             Dim text = <File><![CDATA[
 Imports System.Collections.Generic
 ''' <summary>
-''' <see cref="$$"/>
+''' <see cref="Lis$$"/>
 ''' </summary>
 Class C
 Sub bar(x As Integer, y As Integer)
@@ -364,7 +362,7 @@ End Class
             Dim expected = <File><![CDATA[
 Imports System.Collections.Generic
 ''' <summary>
-''' <see cref=" "/>
+''' <see cref="List(Of T) "/>
 ''' </summary>
 Class C
 Sub bar(x As Integer, y As Integer)
@@ -372,7 +370,7 @@ End Sub
 End Class
 ]]></File>.Value
 
-            Await VerifyProviderCommitAsync(text, "List(Of T)", expected, " "c, "List(Of")
+            Await VerifyProviderCommitAsync(text, "List(Of T)", expected, " "c)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
@@ -381,10 +379,10 @@ End Class
 Imports System
 
 ''' <summary>
-''' <see cref="Foo($$
+''' <see cref="Goo($$
 ''' </summary>
 Module Program
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Module]]></File>.Value
 
@@ -397,10 +395,10 @@ End Module]]></File>.Value
 Imports System
 
 ''' <summary>
-''' <see cref="Foo(a, $$
+''' <see cref="Goo(a, $$
 ''' </summary>
 Module Program
-    Sub Foo()
+    Sub Goo()
     End Sub
 End Module]]></File>.Value
 
@@ -412,14 +410,18 @@ End Module]]></File>.Value
             Dim text = <a><![CDATA[
 Class C
     ''' <see cref="$$
-    Sub foo()
+    Sub goo()
     End Sub
 End Class]]></a>.Value.NormalizeLineEndings()
 
-            Using workspace = Await TestWorkspace.CreateAsync(LanguageNames.VisualBasic, New VisualBasicCompilationOptions(OutputKind.ConsoleApplication), New VisualBasicParseOptions(), {text})
+            Using workspace = TestWorkspace.Create(LanguageNames.VisualBasic, New VisualBasicCompilationOptions(OutputKind.ConsoleApplication), New VisualBasicParseOptions(), {text}, ExportProvider)
                 Dim called = False
 
-                Dim completionProvider = New CrefCompletionProvider(
+                Dim hostDocument = workspace.DocumentWithCursor
+                Dim document = workspace.CurrentSolution.GetDocument(hostDocument.Id)
+                Dim service = GetCompletionService(document.Project)
+                Dim provider = Assert.IsType(Of CrefCompletionProvider)(service.GetTestAccessor().GetAllProviders(ImmutableHashSet(Of String).Empty).Single())
+                provider.GetTestAccessor().SetSpeculativeNodeCallback(
                     Sub(node As SyntaxNode)
                         ' asserts that we aren't be asked speculate on nodes inside documentation trivia.
                         ' This verifies that the provider Is asking for a speculative SemanticModel
@@ -430,15 +432,23 @@ End Class]]></a>.Value.NormalizeLineEndings()
                         Assert.Null(trivia)
                     End Sub)
 
-                Dim hostDocument = workspace.DocumentWithCursor
-                Dim document = workspace.CurrentSolution.GetDocument(hostDocument.Id)
-                Dim service = CreateCompletionService(
-                    workspace,
-                    ImmutableArray.Create(Of CompletionProvider)(completionProvider))
-                Dim completionList = Await GetCompletionListAsync(service, document, hostDocument.CursorPosition.Value, CompletionTrigger.Default)
+                Dim completionList = Await GetCompletionListAsync(service, document, hostDocument.CursorPosition.Value, CompletionTrigger.Invoke)
 
                 Assert.True(called)
             End Using
+        End Function
+
+        <Fact, Trait(Traits.Feature, Traits.Features.Completion)>
+        Public Async Function TestNoSuggestionAfterEmptyCref() As Task
+            Dim text = "
+Class C
+    ''' <see cref="""" $$
+    Sub Goo()
+    End Sub
+End Class
+"
+
+            Await VerifyNoItemsExistAsync(text)
         End Function
     End Class
 End Namespace

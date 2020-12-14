@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Immutable;
 using System.Threading;
@@ -11,7 +15,7 @@ namespace Microsoft.CodeAnalysis.Completion.Providers
     {
         public static CompletionItem Create(
             string displayText,
-            Glyph? glyph,
+            string displayTextSuffix,
             DeclarationModifiers modifiers,
             int line,
             ISymbol symbol,
@@ -24,19 +28,17 @@ namespace Microsoft.CodeAnalysis.Completion.Providers
                 .Add("Modifiers", modifiers.ToString())
                 .Add("TokenSpanEnd", token.Span.End.ToString());
 
-            return SymbolCompletionItem.Create(
+            return SymbolCompletionItem.CreateWithSymbolId(
                 displayText: displayText,
-                symbol: symbol,
-                glyph: glyph,
+                displayTextSuffix: displayTextSuffix,
+                symbols: ImmutableArray.Create(symbol),
                 contextPosition: descriptionPosition,
                 properties: props,
                 rules: rules);
         }
 
-        public static Task<CompletionDescription> GetDescriptionAsync(CompletionItem  item, Document document, CancellationToken cancellationToken)
-        {
-            return SymbolCompletionItem.GetDescriptionAsync(item, document, cancellationToken);
-        }
+        public static Task<CompletionDescription> GetDescriptionAsync(CompletionItem item, Document document, CancellationToken cancellationToken)
+            => SymbolCompletionItem.GetDescriptionAsync(item, document, cancellationToken);
 
         public static DeclarationModifiers GetModifiers(CompletionItem item)
         {
@@ -46,7 +48,7 @@ namespace Microsoft.CodeAnalysis.Completion.Providers
                 return modifiers;
             }
 
-            return default(DeclarationModifiers);
+            return default;
         }
 
         public static int GetLine(CompletionItem item)

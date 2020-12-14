@@ -1,11 +1,15 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
+using Roslyn.Utilities;
 using EmitContext = Microsoft.CodeAnalysis.Emit.EmitContext;
 
 namespace Microsoft.Cci
@@ -16,17 +20,17 @@ namespace Microsoft.Cci
     internal interface IAssemblyReference : IModuleReference
     {
         AssemblyIdentity Identity { get; }
-        Version AssemblyVersionPattern { get; }
+        Version? AssemblyVersionPattern { get; }
     }
 
-
-    internal struct DefinitionWithLocation
+    [DebuggerDisplay("{GetDebuggerDisplay(),nq}")]
+    internal struct DefinitionWithLocation : IEquatable<DefinitionWithLocation>
     {
         public readonly IDefinition Definition;
-        public readonly uint StartLine;
-        public readonly uint StartColumn;
-        public readonly uint EndLine;
-        public readonly uint EndColumn;
+        public readonly int StartLine;
+        public readonly int StartColumn;
+        public readonly int EndLine;
+        public readonly int EndColumn;
 
         public DefinitionWithLocation(IDefinition definition,
             int startLine, int startColumn, int endLine, int endColumn)
@@ -36,20 +40,29 @@ namespace Microsoft.Cci
             Debug.Assert(endLine >= 0);
             Debug.Assert(endColumn >= 0);
 
-            this.Definition = definition;
-            this.StartLine = (uint)startLine;
-            this.StartColumn = (uint)startColumn;
-            this.EndLine = (uint)endLine;
-            this.EndColumn = (uint)endColumn;
+            Definition = definition;
+            StartLine = startLine;
+            StartColumn = startColumn;
+            EndLine = endLine;
+            EndColumn = endColumn;
         }
 
-        public override string ToString()
+        private string GetDebuggerDisplay()
+            => $"{Definition} => ({StartLine},{StartColumn}) - ({EndLine}, {EndColumn})";
+
+        public override bool Equals(object? obj)
         {
-            return string.Format(
-                "{0} => start:{1}/{2}, end:{3}/{4}",
-                this.Definition.ToString(),
-                this.StartLine.ToString(), this.StartColumn.ToString(),
-                this.EndLine.ToString(), this.EndColumn.ToString());
+            return obj is DefinitionWithLocation other && Equals(other);
+        }
+
+        public bool Equals(DefinitionWithLocation other)
+        {
+            return Definition == other.Definition && StartLine == other.StartLine && StartColumn == other.StartColumn && EndLine == other.EndLine && EndColumn == other.EndColumn;
+        }
+
+        public override int GetHashCode()
+        {
+            return Hash.Combine(RuntimeHelpers.GetHashCode(Definition), StartLine.GetHashCode());
         }
     }
 

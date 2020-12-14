@@ -1,4 +1,6 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Concurrent;
@@ -10,6 +12,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.Internal.Log;
+using Microsoft.CodeAnalysis.PooledObjects;
+using Microsoft.CodeAnalysis.Shared.Collections;
+using Microsoft.CodeAnalysis.Shared.Extensions;
+using Microsoft.CodeAnalysis.Shared.Utilities;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -26,49 +32,42 @@ namespace Microsoft.CodeAnalysis.CodeFixes
 
         #region "AbstractFixAllProvider methods"
 
-        public override async Task<CodeAction> GetFixAsync(FixAllContext fixAllContext)
+        public override async Task<CodeAction?> GetFixAsync(FixAllContext fixAllContext)
         {
             if (fixAllContext.Document != null)
             {
                 var documentsAndDiagnosticsToFixMap = await fixAllContext.GetDocumentDiagnosticsToFixAsync().ConfigureAwait(false);
-                return await GetFixAsync(documentsAndDiagnosticsToFixMap, fixAllContext.State, fixAllContext.CancellationToken).ConfigureAwait(false);
+                return await GetFixAsync(documentsAndDiagnosticsToFixMap, fixAllContext).ConfigureAwait(false);
             }
             else
             {
                 var projectsAndDiagnosticsToFixMap = await fixAllContext.GetProjectDiagnosticsToFixAsync().ConfigureAwait(false);
-                return await GetFixAsync(projectsAndDiagnosticsToFixMap, fixAllContext.State, fixAllContext.CancellationToken).ConfigureAwait(false);
+                return await GetFixAsync(projectsAndDiagnosticsToFixMap, fixAllContext).ConfigureAwait(false);
             }
         }
 
         #endregion
 
-        internal override async Task<CodeAction> GetFixAsync(
+        private async Task<CodeAction?> GetFixAsync(
             ImmutableDictionary<Document, ImmutableArray<Diagnostic>> documentsAndDiagnosticsToFixMap,
-            FixAllState fixAllState, CancellationToken cancellationToken)
+            FixAllContext fixAllContext)
         {
-            if (documentsAndDiagnosticsToFixMap != null && documentsAndDiagnosticsToFixMap.Any())
+            var cancellationToken = fixAllContext.CancellationToken;
+            if (documentsAndDiagnosticsToFixMap?.Any() == true)
             {
-                FixAllLogger.LogDiagnosticsStats(documentsAndDiagnosticsToFixMap);
+                var fixAllState = fixAllContext.State;
+                FixAllLogger.LogDiagnosticsStats(fixAllState.CorrelationId, documentsAndDiagnosticsToFixMap);
 
-                var fixesBag = new ConcurrentBag<(Diagnostic diagnostic, CodeAction action)>();
+                var diagnosticsAndCodeActions = await GetDiagnosticsAndCodeActionsAsync(documentsAndDiagnosticsToFixMap, fixAllContext).ConfigureAwait(false);
 
-                using (Logger.LogBlock(FunctionId.CodeFixes_FixAllOccurrencesComputation_Fixes, cancellationToken))
+                if (diagnosticsAndCodeActions.Length > 0)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var documents = documentsAndDiagnosticsToFixMap.Keys;
-                    var tasks = documents.Select(d => AddDocumentFixesAsync(
-                        d, documentsAndDiagnosticsToFixMap[d], fixesBag, fixAllState, cancellationToken)).ToArray();
-                    await Task.WhenAll(tasks).ConfigureAwait(false);
-                }
-
-                if (fixesBag.Count > 0)
-                {
-                    using (Logger.LogBlock(FunctionId.CodeFixes_FixAllOccurrencesComputation_Merge, cancellationToken))
+                    var functionId = FunctionId.CodeFixes_FixAllOccurrencesComputation_Document_Merge;
+                    using (Logger.LogBlock(functionId, FixAllLogger.CreateCorrelationLogMessage(fixAllState.CorrelationId), cancellationToken))
                     {
-                        FixAllLogger.LogFixesToMergeStats(fixesBag.Count);
+                        FixAllLogger.LogFixesToMergeStats(functionId, fixAllState.CorrelationId, diagnosticsAndCodeActions.Length);
                         return await TryGetMergedFixAsync(
-                            fixesBag.ToImmutableArray(), fixAllState, cancellationToken).ConfigureAwait(false);
+                            diagnosticsAndCodeActions, fixAllState, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -76,9 +75,69 @@ namespace Microsoft.CodeAnalysis.CodeFixes
             return null;
         }
 
-        protected async virtual Task AddDocumentFixesAsync(
+        private async Task<ImmutableArray<(Diagnostic diagnostic, CodeAction action)>> GetDiagnosticsAndCodeActionsAsync(
+            ImmutableDictionary<Document, ImmutableArray<Diagnostic>> documentsAndDiagnosticsToFixMap,
+            FixAllContext fixAllContext)
+        {
+            var cancellationToken = fixAllContext.CancellationToken;
+            var fixAllState = fixAllContext.State;
+            var fixesBag = new ConcurrentBag<(Diagnostic diagnostic, CodeAction action)>();
+
+            using (Logger.LogBlock(
+                FunctionId.CodeFixes_FixAllOccurrencesComputation_Document_Fixes,
+                FixAllLogger.CreateCorrelationLogMessage(fixAllState.CorrelationId),
+                cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var progressTracker = fixAllContext.GetProgressTracker();
+                progressTracker.Description = WorkspaceExtensionsResources.Applying_fix_all;
+
+                using var _1 = ArrayBuilder<Task>.GetInstance(out var tasks);
+                using var _2 = ArrayBuilder<Document>.GetInstance(out var documentsToFix);
+
+                // Determine the set of documents to actually fix.  We can also use this to update the progress bar with
+                // the amount of remaining work to perform.  We'll update the progress bar as we compute each fix in
+                // AddDocumentFixesAsync.
+                foreach (var (document, diagnosticsToFix) in documentsAndDiagnosticsToFixMap)
+                {
+                    if (!diagnosticsToFix.IsDefaultOrEmpty)
+                        documentsToFix.Add(document);
+                }
+
+                progressTracker.AddItems(documentsToFix.Count);
+
+                foreach (var document in documentsToFix)
+                {
+                    var diagnosticsToFix = documentsAndDiagnosticsToFixMap[document];
+                    tasks.Add(AddDocumentFixesAsync(
+                        document, diagnosticsToFix, fixesBag, fixAllState, progressTracker, cancellationToken));
+                }
+
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+            }
+
+            return fixesBag.ToImmutableArray();
+        }
+
+        private async Task AddDocumentFixesAsync(
             Document document, ImmutableArray<Diagnostic> diagnostics,
-            ConcurrentBag<(Diagnostic diagnostic, CodeAction action)> fixes, 
+            ConcurrentBag<(Diagnostic diagnostic, CodeAction action)> fixes,
+            FixAllState fixAllState, IProgressTracker progressTracker, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await this.AddDocumentFixesAsync(document, diagnostics, fixes, fixAllState, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                progressTracker.ItemCompleted();
+            }
+        }
+
+        protected virtual async Task AddDocumentFixesAsync(
+            Document document, ImmutableArray<Diagnostic> diagnostics,
+            ConcurrentBag<(Diagnostic diagnostic, CodeAction action)> fixes,
             FixAllState fixAllState, CancellationToken cancellationToken)
         {
             Debug.Assert(!diagnostics.IsDefault);
@@ -92,27 +151,33 @@ namespace Microsoft.CodeAnalysis.CodeFixes
                 cancellationToken.ThrowIfCancellationRequested();
                 fixerTasks.Add(Task.Run(() =>
                 {
-                   var context = new CodeFixContext(document, diagnostic, registerCodeFix, cancellationToken);
+                    var context = new CodeFixContext(document, diagnostic, registerCodeFix, cancellationToken);
 
                     // TODO: Wrap call to ComputeFixesAsync() below in IExtensionManager.PerformFunctionAsync() so that
                     // a buggy extension that throws can't bring down the host?
-                    return fixAllState.CodeFixProvider.RegisterCodeFixesAsync(context) ?? SpecializedTasks.EmptyTask;
-                }));
+                    return fixAllState.CodeFixProvider.RegisterCodeFixesAsync(context) ?? Task.CompletedTask;
+                }, cancellationToken));
             }
 
             await Task.WhenAll(fixerTasks).ConfigureAwait(false);
         }
 
-        internal override async Task<CodeAction> GetFixAsync(
+        private async Task<CodeAction?> GetFixAsync(
             ImmutableDictionary<Project, ImmutableArray<Diagnostic>> projectsAndDiagnosticsToFixMap,
-            FixAllState fixAllState, CancellationToken cancellationToken)
+            FixAllContext fixAllContext)
         {
+            var cancellationToken = fixAllContext.CancellationToken;
+            var fixAllState = fixAllContext.State;
+
             if (projectsAndDiagnosticsToFixMap != null && projectsAndDiagnosticsToFixMap.Any())
             {
-                FixAllLogger.LogDiagnosticsStats(projectsAndDiagnosticsToFixMap);
+                FixAllLogger.LogDiagnosticsStats(fixAllState.CorrelationId, projectsAndDiagnosticsToFixMap);
 
                 var bag = new ConcurrentBag<(Diagnostic diagnostic, CodeAction action)>();
-                using (Logger.LogBlock(FunctionId.CodeFixes_FixAllOccurrencesComputation_Fixes, cancellationToken))
+                using (Logger.LogBlock(
+                    FunctionId.CodeFixes_FixAllOccurrencesComputation_Project_Fixes,
+                    FixAllLogger.CreateCorrelationLogMessage(fixAllState.CorrelationId),
+                    cancellationToken))
                 {
                     var projects = projectsAndDiagnosticsToFixMap.Keys;
                     var tasks = projects.Select(p => AddProjectFixesAsync(
@@ -124,9 +189,10 @@ namespace Microsoft.CodeAnalysis.CodeFixes
                 var result = bag.ToImmutableArray();
                 if (result.Length > 0)
                 {
-                    using (Logger.LogBlock(FunctionId.CodeFixes_FixAllOccurrencesComputation_Merge, cancellationToken))
+                    var functionId = FunctionId.CodeFixes_FixAllOccurrencesComputation_Project_Merge;
+                    using (Logger.LogBlock(functionId, cancellationToken))
                     {
-                        FixAllLogger.LogFixesToMergeStats(result.Length);
+                        FixAllLogger.LogFixesToMergeStats(functionId, fixAllState.CorrelationId, result.Length);
                         return await TryGetMergedFixAsync(
                             result, fixAllState, cancellationToken).ConfigureAwait(false);
                     }
@@ -139,33 +205,37 @@ namespace Microsoft.CodeAnalysis.CodeFixes
         private static Action<CodeAction, ImmutableArray<Diagnostic>> GetRegisterCodeFixAction(
             FixAllState fixAllState,
             ConcurrentBag<(Diagnostic diagnostic, CodeAction action)> result)
-            => (action, diagnostics) =>
-               {
-                   if (action != null && action.EquivalenceKey == fixAllState.CodeActionEquivalenceKey)
-                   {
-                       result.Add((diagnostics.First(), action));
-                   }
-               };
-
-
-        protected virtual Task AddProjectFixesAsync(
-            Project project, ImmutableArray<Diagnostic> diagnostics, 
-            ConcurrentBag<(Diagnostic diagnostic, CodeAction action)> fixes, 
-            FixAllState fixAllState, CancellationToken cancellationToken)
         {
-            Debug.Assert(!diagnostics.IsDefault);
-            cancellationToken.ThrowIfCancellationRequested();
+            return (action, diagnostics) =>
+            {
+                using var _ = ArrayBuilder<CodeAction>.GetInstance(out var builder);
+                builder.Push(action);
+                while (builder.Count > 0)
+                {
+                    var currentAction = builder.Pop();
+                    if (currentAction is { EquivalenceKey: var equivalenceKey }
+                        && equivalenceKey == fixAllState.CodeActionEquivalenceKey)
+                    {
+                        result.Add((diagnostics.First(), currentAction));
+                    }
 
-            var registerCodeFix = GetRegisterCodeFixAction(fixAllState, fixes);
-            var context = new CodeFixContext(
-                project, diagnostics, registerCodeFix, cancellationToken);
-
-            // TODO: Wrap call to ComputeFixesAsync() below in IExtensionManager.PerformFunctionAsync() so that
-            // a buggy extension that throws can't bring down the host?
-            return fixAllState.CodeFixProvider.RegisterCodeFixesAsync(context) ?? SpecializedTasks.EmptyTask;
+                    foreach (var nestedAction in currentAction.NestedCodeActions)
+                    {
+                        builder.Push(nestedAction);
+                    }
+                }
+            };
         }
 
-        public virtual async Task<CodeAction> TryGetMergedFixAsync(
+        protected virtual Task AddProjectFixesAsync(
+            Project project, ImmutableArray<Diagnostic> diagnostics,
+            ConcurrentBag<(Diagnostic diagnostic, CodeAction action)> fixes,
+            FixAllState fixAllState, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public virtual async Task<CodeAction?> TryGetMergedFixAsync(
             ImmutableArray<(Diagnostic diagnostic, CodeAction action)> batchOfFixes,
             FixAllState fixAllState, CancellationToken cancellationToken)
         {
@@ -184,16 +254,14 @@ namespace Microsoft.CodeAnalysis.CodeFixes
         }
 
         public virtual string GetFixAllTitle(FixAllState fixAllState)
-        {
-            return fixAllState.GetDefaultFixAllTitle();
-        }
+            => FixAllContextHelper.GetDefaultFixAllTitle(fixAllState.Scope, fixAllState.DiagnosticIds, fixAllState.Document, fixAllState.Project);
 
         public virtual async Task<Solution> TryMergeFixesAsync(
-            Solution oldSolution, 
+            Solution oldSolution,
             ImmutableArray<(Diagnostic diagnostic, CodeAction action)> diagnosticsAndCodeActions,
             FixAllState fixAllState, CancellationToken cancellationToken)
         {
-            var documentIdToChangedDocuments = await GetDocumentIdToChangedDocuments(
+            var documentIdToChangedDocuments = await GetDocumentIdToChangedDocumentsAsync(
                 oldSolution, diagnosticsAndCodeActions, cancellationToken).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -215,9 +283,9 @@ namespace Microsoft.CodeAnalysis.CodeFixes
             return currentSolution;
         }
 
-        private async Task<IReadOnlyDictionary<DocumentId, ConcurrentBag<(CodeAction, Document)>>> GetDocumentIdToChangedDocuments(
-            Solution oldSolution, 
-            ImmutableArray<(Diagnostic diagnostic, CodeAction action)> diagnosticsAndCodeActions, 
+        private static async Task<IReadOnlyDictionary<DocumentId, ConcurrentBag<(CodeAction, Document)>>> GetDocumentIdToChangedDocumentsAsync(
+            Solution oldSolution,
+            ImmutableArray<(Diagnostic diagnostic, CodeAction action)> diagnosticsAndCodeActions,
             CancellationToken cancellationToken)
         {
             var documentIdToChangedDocuments = new ConcurrentDictionary<DocumentId, ConcurrentBag<(CodeAction, Document)>>();
@@ -226,19 +294,19 @@ namespace Microsoft.CodeAnalysis.CodeFixes
             // For each changed document, also keep track of the associated code action that
             // produced it.
             var getChangedDocumentsTasks = new List<Task>();
-            foreach (var diagnosticAndCodeAction in diagnosticsAndCodeActions)
+            foreach (var (_, action) in diagnosticsAndCodeActions)
             {
                 getChangedDocumentsTasks.Add(GetChangedDocumentsAsync(
                     oldSolution, documentIdToChangedDocuments,
-                    diagnosticAndCodeAction.action, cancellationToken));
+                    action, cancellationToken));
             }
 
             await Task.WhenAll(getChangedDocumentsTasks).ConfigureAwait(false);
             return documentIdToChangedDocuments;
         }
 
-        private async Task<IReadOnlyDictionary<DocumentId, SourceText>> GetDocumentIdToFinalTextAsync(
-            Solution oldSolution, 
+        private static async Task<IReadOnlyDictionary<DocumentId, SourceText>> GetDocumentIdToFinalTextAsync(
+            Solution oldSolution,
             IReadOnlyDictionary<DocumentId, ConcurrentBag<(CodeAction, Document)>> documentIdToChangedDocuments,
             ImmutableArray<(Diagnostic diagnostic, CodeAction action)> diagnosticsAndCodeActions,
             CancellationToken cancellationToken)
@@ -263,11 +331,11 @@ namespace Microsoft.CodeAnalysis.CodeFixes
             return documentIdToFinalText;
         }
 
-        private async Task GetFinalDocumentTextAsync(
-            Solution oldSolution, 
+        private static async Task GetFinalDocumentTextAsync(
+            Solution oldSolution,
             Dictionary<CodeAction, int> codeActionToDiagnosticLocation,
             ConcurrentDictionary<DocumentId, SourceText> documentIdToFinalText,
-            IEnumerable<(CodeAction action, Document document)> changedDocuments, 
+            IEnumerable<(CodeAction action, Document document)> changedDocuments,
             CancellationToken cancellationToken)
         {
             // Merges all the text changes made to a single document by many code actions
@@ -291,36 +359,44 @@ namespace Microsoft.CodeAnalysis.CodeFixes
 
             // More complex case.  We have multiple changes to the document.  Apply them in order
             // to get the final document.
-            var firstChangedDocument = orderedDocuments[0].document;
-            var documentId = firstChangedDocument.Id;
 
-            var oldDocument = oldSolution.GetDocument(documentId);
-            var appliedChanges = (await firstChangedDocument.GetTextChangesAsync(oldDocument, cancellationToken).ConfigureAwait(false)).ToList();
+            var totalChangesIntervalTree = SimpleIntervalTree.Create(new TextChangeIntervalIntrospector(), Array.Empty<TextChange>());
 
-            for (var i = 1; i < orderedDocuments.Length; i++)
+            var oldDocument = oldSolution.GetRequiredDocument(orderedDocuments[0].document.Id);
+            var differenceService = oldSolution.Workspace.Services.GetRequiredService<IDocumentTextDifferencingService>();
+
+            foreach (var (_, currentDocument) in orderedDocuments)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                Debug.Assert(currentDocument.Id == oldDocument.Id);
 
-                var currentDocument = orderedDocuments[i].document;
-                Debug.Assert(currentDocument.Id == documentId);
-
-                appliedChanges = await TryAddDocumentMergeChangesAsync(
+                await TryAddDocumentMergeChangesAsync(
+                    differenceService,
                     oldDocument,
                     currentDocument,
-                    appliedChanges,
+                    totalChangesIntervalTree,
                     cancellationToken).ConfigureAwait(false);
             }
 
-            var oldText = await oldDocument.GetTextAsync(cancellationToken).ConfigureAwait(false);
-            var newText = oldText.WithChanges(appliedChanges);
+            // WithChanges requires a ordered list of TextChanges without any overlap.
+            var changesToApply = totalChangesIntervalTree.Distinct().OrderBy(tc => tc.Span.Start);
 
-            documentIdToFinalText.TryAdd(documentId, newText);
+            var oldText = await oldDocument.GetTextAsync(cancellationToken).ConfigureAwait(false);
+            var newText = oldText.WithChanges(changesToApply);
+
+            documentIdToFinalText.TryAdd(oldDocument.Id, newText);
         }
 
-        private static Func<DocumentId, ConcurrentBag<(CodeAction, Document)>> s_getValue = 
+        private readonly struct TextChangeIntervalIntrospector : IIntervalIntrospector<TextChange>
+        {
+            int IIntervalIntrospector<TextChange>.GetStart(TextChange value) => value.Span.Start;
+            int IIntervalIntrospector<TextChange>.GetLength(TextChange value) => value.Span.Length;
+        }
+
+        private static readonly Func<DocumentId, ConcurrentBag<(CodeAction, Document)>> s_getValue =
             _ => new ConcurrentBag<(CodeAction, Document)>();
 
-        private async Task GetChangedDocumentsAsync(
+        private static async Task GetChangedDocumentsAsync(
             Solution oldSolution,
             ConcurrentDictionary<DocumentId, ConcurrentBag<(CodeAction, Document)>> documentIdToChangedDocuments,
             CodeAction codeAction,
@@ -330,6 +406,11 @@ namespace Microsoft.CodeAnalysis.CodeFixes
 
             var changedSolution = await codeAction.GetChangedSolutionInternalAsync(
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (changedSolution is null)
+            {
+                // No changed documents
+                return;
+            }
 
             var solutionChanges = new SolutionChanges(changedSolution, oldSolution);
 
@@ -342,7 +423,7 @@ namespace Microsoft.CodeAnalysis.CodeFixes
 
             foreach (var documentId in documentIdsWithChanges)
             {
-                var changedDocument = changedSolution.GetDocument(documentId);
+                var changedDocument = changedSolution.GetRequiredDocument(documentId);
 
                 documentIdToChangedDocuments.GetOrAdd(documentId, s_getValue).Add(
                     (codeAction, changedDocument));
@@ -350,75 +431,193 @@ namespace Microsoft.CodeAnalysis.CodeFixes
         }
 
         /// <summary>
-        /// Try to merge the changes between <paramref name="newDocument"/> and <paramref name="oldDocument"/> into <paramref name="cumulativeChanges"/>.
-        /// If there is any conflicting change in <paramref name="newDocument"/> with existing <paramref name="cumulativeChanges"/>, then the original <paramref name="cumulativeChanges"/> are returned.
-        /// Otherwise, the newly merged changes are returned.
+        /// Try to merge the changes between <paramref name="newDocument"/> and <paramref name="oldDocument"/>
+        /// into <paramref name="cumulativeChanges"/>. If there is any conflicting change in 
+        /// <paramref name="newDocument"/> with existing <paramref name="cumulativeChanges"/>, then no
+        /// changes are added
         /// </summary>
-        /// <param name="oldDocument">Base document on which FixAll was invoked.</param>
-        /// <param name="newDocument">New document with a code fix that is being merged.</param>
-        /// <param name="cumulativeChanges">Existing merged changes from other batch fixes into which newDocument changes are being merged.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        private static async Task<List<TextChange>> TryAddDocumentMergeChangesAsync(
+        private static async Task TryAddDocumentMergeChangesAsync(
+            IDocumentTextDifferencingService differenceService,
             Document oldDocument,
             Document newDocument,
-            List<TextChange> cumulativeChanges,
+            SimpleIntervalTree<TextChange, TextChangeIntervalIntrospector> cumulativeChanges,
             CancellationToken cancellationToken)
         {
-            var successfullyMergedChanges = new List<TextChange>();
+            var currentChanges = await differenceService.GetTextChangesAsync(
+                oldDocument, newDocument, cancellationToken).ConfigureAwait(false);
 
-            int cumulativeChangeIndex = 0;
-            foreach (var change in await newDocument.GetTextChangesAsync(oldDocument, cancellationToken).ConfigureAwait(false))
+            if (AllChangesCanBeApplied(cumulativeChanges, currentChanges))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                while (cumulativeChangeIndex < cumulativeChanges.Count && cumulativeChanges[cumulativeChangeIndex].Span.End < change.Span.Start)
+                foreach (var change in currentChanges)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    // Existing change that does not overlap with the current change in consideration
-                    successfullyMergedChanges.Add(cumulativeChanges[cumulativeChangeIndex]);
-                    cumulativeChangeIndex++;
+                    cumulativeChanges.AddIntervalInPlace(change);
                 }
+            }
+        }
 
-                if (cumulativeChangeIndex < cumulativeChanges.Count)
+        private static bool AllChangesCanBeApplied(
+            SimpleIntervalTree<TextChange, TextChangeIntervalIntrospector> cumulativeChanges,
+            ImmutableArray<TextChange> currentChanges)
+        {
+            using var overlappingSpans = TemporaryArray<TextChange>.Empty;
+            using var intersectingSpans = TemporaryArray<TextChange>.Empty;
+
+            return AllChangesCanBeApplied(
+                cumulativeChanges, currentChanges,
+                overlappingSpans: ref overlappingSpans.AsRef(),
+                intersectingSpans: ref intersectingSpans.AsRef());
+        }
+
+        private static bool AllChangesCanBeApplied(
+            SimpleIntervalTree<TextChange, TextChangeIntervalIntrospector> cumulativeChanges,
+            ImmutableArray<TextChange> currentChanges,
+            ref TemporaryArray<TextChange> overlappingSpans,
+            ref TemporaryArray<TextChange> intersectingSpans)
+        {
+            foreach (var change in currentChanges)
+            {
+                overlappingSpans.Clear();
+                intersectingSpans.Clear();
+
+                cumulativeChanges.FillWithIntervalsThatOverlapWith(
+                    change.Span.Start, change.Span.Length, ref overlappingSpans);
+
+                cumulativeChanges.FillWithIntervalsThatIntersectWith(
+                   change.Span.Start, change.Span.Length, ref intersectingSpans);
+
+                var value = ChangeCanBeApplied(change,
+                    overlappingSpans: in overlappingSpans,
+                    intersectingSpans: in intersectingSpans);
+                if (!value)
                 {
-                    var cumulativeChange = cumulativeChanges[cumulativeChangeIndex];
-                    if (!cumulativeChange.Span.IntersectsWith(change.Span))
-                    {
-                        // The current change in consideration does not intersect with any existing change
-                        successfullyMergedChanges.Add(change);
-                    }
-                    else
-                    {
-                        if (change.Span != cumulativeChange.Span || change.NewText != cumulativeChange.NewText)
-                        {
-                            // The current change in consideration overlaps an existing change but
-                            // the changes are not identical. 
-                            // Bail out merge efforts and return the original 'cumulativeChanges'.
-                            return cumulativeChanges;
-                        }
-                        else
-                        {
-                            // The current change in consideration is identical to an existing change
-                            successfullyMergedChanges.Add(change);
-                            cumulativeChangeIndex++;
-                        }
-                    }
-                }
-                else
-                {
-                    // The current change in consideration does not intersect with any existing change
-                    successfullyMergedChanges.Add(change);
+                    return false;
                 }
             }
 
-            while (cumulativeChangeIndex < cumulativeChanges.Count)
+            // All the changes would merge in fine.  We can absorb this.
+            return true;
+        }
+
+        private static bool ChangeCanBeApplied(
+            TextChange change,
+            in TemporaryArray<TextChange> overlappingSpans,
+            in TemporaryArray<TextChange> intersectingSpans)
+        {
+            // We distinguish two types of changes that can happen.  'Pure Insertions' 
+            // and 'Overwrites'.  Pure-Insertions are those that are just inserting 
+            // text into a specific *position*.  They do not replace any existing text.
+            // 'Overwrites' end up replacing existing text with some other piece of 
+            // (possibly-empty) text.
+            //
+            // Overwrites of text tend to be easy to understand and merge.  It is very
+            // clear what code is being overwritten and how it should interact with
+            // other changes.  Pure-insertions are more ambiguous to deal with.  For
+            // example, say there are two pure-insertions at some position.  There is
+            // no way for us to know what to do with this.  For example, we could take
+            // one insertion then the other, or vice versa.  Because of this ambiguity
+            // we conservatively disallow cases like this.
+
+            return IsPureInsertion(change)
+                ? PureInsertionChangeCanBeApplied(change, in overlappingSpans, in intersectingSpans)
+                : OverwriteChangeCanBeApplied(change, in overlappingSpans, in intersectingSpans);
+        }
+
+        private static bool IsPureInsertion(TextChange change)
+            => change.Span.IsEmpty;
+
+        private static bool PureInsertionChangeCanBeApplied(
+            TextChange change,
+            in TemporaryArray<TextChange> overlappingSpans,
+            in TemporaryArray<TextChange> intersectingSpans)
+        {
+            // Pure insertions can't ever overlap anything.  (They're just an insertion at a 
+            // single position, and overlaps can't occur with single-positions).
+            Debug.Assert(IsPureInsertion(change));
+            Debug.Assert(overlappingSpans.Count == 0);
+            if (intersectingSpans.Count == 0)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                // Existing change that does not overlap with the current change in consideration
-                successfullyMergedChanges.Add(cumulativeChanges[cumulativeChangeIndex]);
-                cumulativeChangeIndex++;
+                // Our pure-insertion didn't hit any other changes.  This is safe to apply.
+                return true;
             }
 
-            return successfullyMergedChanges;
+            if (intersectingSpans.Count == 1)
+            {
+                // Our pure-insertion hit another change.  Thats safe when:
+                //  1) if both changes are the same.
+                //  2) the change we're hitting is an overwrite-change and we're at the end of it.
+
+                // Specifically, it is not safe for us to insert somewhere in start-to-middle of an 
+                // existing overwrite-change.  And if we have another pure-insertion change, then it's 
+                // not safe for both of us to be inserting at the same point (except when the 
+                // change is identical).
+
+                // Note: you may wonder why we don't support hitting an overwriting change at the
+                // start of the overwrite.  This is because it's now ambiguous as to which of these
+                // changes should be applied first.
+
+                var otherChange = intersectingSpans[0];
+                if (otherChange == change)
+                {
+                    // We're both pure-inserting the same text at the same position.  
+                    // We assume this is a case of some provider making the same changes and
+                    // we allow this.
+                    return true;
+                }
+
+                return !IsPureInsertion(otherChange) &&
+                       otherChange.Span.End == change.Span.Start;
+            }
+
+            // We're intersecting multiple changes.  That's never OK.
+            return false;
+        }
+
+        private static bool OverwriteChangeCanBeApplied(
+            TextChange change,
+            in TemporaryArray<TextChange> overlappingSpans,
+            in TemporaryArray<TextChange> intersectingSpans)
+        {
+            Debug.Assert(!IsPureInsertion(change));
+
+            return !OverwriteChangeConflictsWithOverlappingSpans(change, in overlappingSpans) &&
+                   !OverwriteChangeConflictsWithIntersectingSpans(change, in intersectingSpans);
+        }
+
+        private static bool OverwriteChangeConflictsWithOverlappingSpans(
+            TextChange change,
+            in TemporaryArray<TextChange> overlappingSpans)
+        {
+            Debug.Assert(!IsPureInsertion(change));
+
+            if (overlappingSpans.Count == 0)
+            {
+                // This overwrite didn't overlap with any other changes.  This change is safe to make.
+                return false;
+            }
+
+            // The change we want to make overlapped an existing change we're making.  Only allow
+            // this if there was a single overlap and we are exactly the same change as it.
+            // Otherwise, this is a conflict.
+            var isSafe = overlappingSpans.Count == 1 && overlappingSpans[0] == change;
+
+            return !isSafe;
+        }
+
+        private static bool OverwriteChangeConflictsWithIntersectingSpans(
+            TextChange change,
+            in TemporaryArray<TextChange> intersectingSpans)
+        {
+            Debug.Assert(!IsPureInsertion(change));
+
+            // We care about our intersections with pure-insertion changes.  Overwrite-changes that
+            // we overlap are already handled in OverwriteChangeConflictsWithOverlappingSpans.
+            // And overwrite spans that we abut (i.e. which we're adjacent to) are totally safe 
+            // for both to be applied.
+            //
+            // However, pure-insertion changes are extremely ambiguous. It is not possible to tell which
+            // change should be applied first.  So if we get any pure-insertions we have to bail
+            // on applying this span.
+            return intersectingSpans.Any(static otherSpan => IsPureInsertion(otherSpan));
         }
     }
 }

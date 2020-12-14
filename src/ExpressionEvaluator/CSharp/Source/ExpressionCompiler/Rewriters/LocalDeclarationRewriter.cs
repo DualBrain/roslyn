@@ -1,7 +1,12 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.ExpressionEvaluator;
+using Microsoft.CodeAnalysis.PooledObjects;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -10,13 +15,19 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 {
     internal sealed class LocalDeclarationRewriter
     {
-        internal static BoundStatement Rewrite(CSharpCompilation compilation, EENamedTypeSymbol container, HashSet<LocalSymbol> declaredLocals, BoundStatement node, ImmutableArray<LocalSymbol> declaredLocalsArray)
+        internal static BoundStatement Rewrite(
+            CSharpCompilation compilation,
+            EENamedTypeSymbol container,
+            HashSet<LocalSymbol> declaredLocals,
+            BoundStatement node,
+            ImmutableArray<LocalSymbol> declaredLocalsArray,
+            DiagnosticBag diagnostics)
         {
             var builder = ArrayBuilder<BoundStatement>.GetInstance();
 
             foreach (var local in declaredLocalsArray)
             {
-                CreateLocal(compilation, declaredLocals, builder, local, node.Syntax);
+                CreateLocal(compilation, declaredLocals, builder, local, node.Syntax, diagnostics);
             }
 
             // Rewrite top-level declarations only.
@@ -44,7 +55,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                     }
 
                     builder.Add(node);
-                    break; 
+                    break;
             }
 
             return BoundBlock.SynthesizedNoLocals(node.Syntax, builder.ToImmutableAndFree());
@@ -64,29 +75,40 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 
                 // Generate assignment to local. The assignment will
                 // be rewritten in PlaceholderLocalRewriter.
+                var type = local.Type;
                 var assignment = new BoundAssignmentOperator(
                     syntax,
-                    new BoundLocal(syntax, local, constantValueOpt: null, type: local.Type),
+                    new BoundLocal(syntax, local, constantValueOpt: null, type: type),
                     initializer,
-                    RefKind.None,
-                    local.Type);
+                    false,
+                    type);
                 statements.Add(new BoundExpressionStatement(syntax, assignment));
             }
         }
 
-        private static void CreateLocal(CSharpCompilation compilation, HashSet<LocalSymbol> declaredLocals, ArrayBuilder<BoundStatement> statements, LocalSymbol local, SyntaxNode syntax)
+        private static void CreateLocal(
+            CSharpCompilation compilation,
+            HashSet<LocalSymbol> declaredLocals,
+            ArrayBuilder<BoundStatement> statements,
+            LocalSymbol local,
+            SyntaxNode syntax,
+            DiagnosticBag diagnostics)
         {
+            // CreateVariable(Type type, string name)
+            var method = PlaceholderLocalSymbol.GetIntrinsicMethod(compilation, ExpressionCompilerConstants.CreateVariableMethodName);
+            if ((object)method == null)
+            {
+                diagnostics.Add(ErrorCode.ERR_DeclarationExpressionNotPermitted, local.Locations[0]);
+                return;
+            }
+
             declaredLocals.Add(local);
 
             var typeType = compilation.GetWellKnownType(WellKnownType.System_Type);
             var stringType = compilation.GetSpecialType(SpecialType.System_String);
             var guidConstructor = (MethodSymbol)compilation.GetWellKnownTypeMember(WellKnownMember.System_Guid__ctor);
-
-            // CreateVariable(Type type, string name)
-            var method = PlaceholderLocalSymbol.GetIntrinsicMethod(compilation, ExpressionCompilerConstants.CreateVariableMethodName);
             var type = new BoundTypeOfOperator(syntax, new BoundTypeExpression(syntax, aliasOpt: null, type: local.Type), null, typeType);
             var name = new BoundLiteral(syntax, ConstantValue.Create(local.Name), stringType);
-
             bool hasCustomTypeInfoPayload;
             var customTypeInfoPayload = GetCustomTypeInfoPayload(local, syntax, compilation, out hasCustomTypeInfoPayload);
             var customTypeInfoPayloadId = GetCustomTypeInfoPayloadId(syntax, guidConstructor, hasCustomTypeInfoPayload);
@@ -102,13 +124,14 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
         {
             if (!hasCustomTypeInfoPayload)
             {
-                return new BoundDefaultOperator(syntax, guidConstructor.ContainingType);
+                return new BoundDefaultExpression(syntax, targetType: null, constantValueOpt: null, guidConstructor.ContainingType);
             }
 
             var value = ConstantValue.Create(CustomTypeInfo.PayloadTypeId.ToString());
             return new BoundObjectCreationExpression(
                 syntax,
                 guidConstructor,
+                null,
                 new BoundLiteral(syntax, value, guidConstructor.ContainingType));
         }
 
@@ -116,7 +139,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
         {
             var byteArrayType = ArrayTypeSymbol.CreateSZArray(
                 compilation.Assembly,
-                compilation.GetSpecialType(SpecialType.System_Byte));
+                TypeWithAnnotations.Create(compilation.GetSpecialType(SpecialType.System_Byte)));
 
             var bytes = compilation.GetCustomTypeInfoPayload(local.Type, customModifiersCount: 0, refKind: RefKind.None);
             hasCustomTypeInfoPayload = bytes != null;

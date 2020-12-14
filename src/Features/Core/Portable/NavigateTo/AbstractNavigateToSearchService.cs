@@ -1,43 +1,71 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.Remote;
 
 namespace Microsoft.CodeAnalysis.NavigateTo
 {
     internal abstract partial class AbstractNavigateToSearchService : INavigateToSearchService
     {
+        public IImmutableSet<string> KindsProvided { get; } = ImmutableHashSet.Create(
+            NavigateToItemKind.Class,
+            NavigateToItemKind.Record,
+            NavigateToItemKind.Constant,
+            NavigateToItemKind.Delegate,
+            NavigateToItemKind.Enum,
+            NavigateToItemKind.EnumItem,
+            NavigateToItemKind.Event,
+            NavigateToItemKind.Field,
+            NavigateToItemKind.Interface,
+            NavigateToItemKind.Method,
+            NavigateToItemKind.Module,
+            NavigateToItemKind.Property,
+            NavigateToItemKind.Structure);
+
+        public bool CanFilter => true;
+
         public async Task<ImmutableArray<INavigateToSearchResult>> SearchDocumentAsync(
-            Document document, string searchPattern, CancellationToken cancellationToken)
+            Document document, string searchPattern, IImmutableSet<string> kinds, CancellationToken cancellationToken)
         {
-            var client = await GetRemoteHostClientAsync(document.Project, cancellationToken).ConfigureAwait(false);
-            if (client == null)
+            var client = await RemoteHostClient.TryGetClientAsync(document.Project, cancellationToken).ConfigureAwait(false);
+            if (client != null)
             {
-                return await SearchDocumentInCurrentProcessAsync(
-                    document, searchPattern, cancellationToken).ConfigureAwait(false);
+                var solution = document.Project.Solution;
+
+                var result = await client.TryInvokeAsync<IRemoteNavigateToSearchService, ImmutableArray<SerializableNavigateToSearchResult>>(
+                    solution,
+                    (service, solutionInfo, cancellationToken) => service.SearchDocumentAsync(solutionInfo, document.Id, searchPattern, kinds.ToImmutableArray(), cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.HasValue ? result.Value.SelectAsArray(r => r.Rehydrate(solution)) : ImmutableArray<INavigateToSearchResult>.Empty;
             }
-            else
-            {
-                return await SearchDocumentInRemoteProcessAsync(
-                    client, document, searchPattern, cancellationToken).ConfigureAwait(false);
-            }
+
+            return await SearchDocumentInCurrentProcessAsync(
+                document, searchPattern, kinds, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<ImmutableArray<INavigateToSearchResult>> SearchProjectAsync(
-            Project project, string searchPattern, CancellationToken cancellationToken)
+            Project project, ImmutableArray<Document> priorityDocuments, string searchPattern, IImmutableSet<string> kinds, CancellationToken cancellationToken)
         {
-            var client = await GetRemoteHostClientAsync(project, cancellationToken).ConfigureAwait(false);
-            if (client == null)
+            var client = await RemoteHostClient.TryGetClientAsync(project, cancellationToken).ConfigureAwait(false);
+            if (client != null)
             {
-                return await SearchProjectInCurrentProcessAsync(
-                    project, searchPattern, cancellationToken).ConfigureAwait(false);
+                var solution = project.Solution;
+                var priorityDocumentIds = priorityDocuments.SelectAsArray(d => d.Id);
+                var result = await client.TryInvokeAsync<IRemoteNavigateToSearchService, ImmutableArray<SerializableNavigateToSearchResult>>(
+                    solution,
+                    (service, solutionInfo, cancellationToken) => service.SearchProjectAsync(solutionInfo, project.Id, priorityDocumentIds, searchPattern, kinds.ToImmutableArray(), cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+
+                return result.HasValue ? result.Value.SelectAsArray(r => r.Rehydrate(solution)) : ImmutableArray<INavigateToSearchResult>.Empty;
             }
-            else
-            {
-                return await SearchProjectInRemoteProcessAsync(
-                    client, project, searchPattern, cancellationToken).ConfigureAwait(false);
-            }
+
+            return await SearchProjectInCurrentProcessAsync(
+                project, priorityDocuments, searchPattern, kinds, cancellationToken).ConfigureAwait(false);
         }
     }
 }

@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -15,11 +19,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
 
         public ObservableCollection<INamingStylesInfoDialogViewModel> Items { get; set; }
 
-        public string DialogTitle => "Manage Naming Styles";
+        public string DialogTitle => ServicesVSResources.Manage_naming_styles;
 
         public ManageNamingStylesDialogViewModel(
-            ObservableCollection<NamingStyle> namingStyles, 
-            List<NamingStyleOptionPageViewModel.NamingRuleViewModel> namingRules, 
+            ObservableCollection<MutableNamingStyle> namingStyles,
+            List<NamingStyleOptionPageViewModel.NamingRuleViewModel> namingRules,
             INotificationService notificationService)
         {
             _notificationService = notificationService;
@@ -31,26 +35,22 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
         }
 
         internal void RemoveNamingStyle(NamingStyleViewModel namingStyle)
-        {
-            Items.Remove(namingStyle);
-        }
+            => Items.Remove(namingStyle);
 
         public void AddItem()
         {
-            var style = new NamingStyle();
+            var style = new MutableNamingStyle();
             var viewModel = new NamingStyleViewModel(style, canBeDeleted: true, notificationService: _notificationService);
             var dialog = new NamingStyleDialog(viewModel);
 
-            if (dialog.ShowDialog().Value == true)
+            if (dialog.ShowModal().Value == true)
             {
                 Items.Add(viewModel);
             }
         }
 
         public void RemoveItem(INamingStylesInfoDialogViewModel item)
-        {
-            Items.Remove(item);
-        }
+            => Items.Remove(item);
 
         public void EditItem(INamingStylesInfoDialogViewModel item)
         {
@@ -60,7 +60,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             var viewModel = new NamingStyleViewModel(style, context.CanBeDeleted, notificationService: _notificationService);
             var dialog = new NamingStyleDialog(viewModel);
 
-            if (dialog.ShowDialog().Value == true)
+            if (dialog.ShowModal().Value == true)
             {
                 context.ItemName = viewModel.ItemName;
                 context.RequiredPrefix = viewModel.RequiredPrefix;

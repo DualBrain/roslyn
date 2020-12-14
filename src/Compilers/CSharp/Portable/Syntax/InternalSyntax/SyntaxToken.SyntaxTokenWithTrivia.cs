@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using Roslyn.Utilities;
@@ -9,6 +13,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
     {
         internal class SyntaxTokenWithTrivia : SyntaxToken
         {
+            static SyntaxTokenWithTrivia()
+            {
+                ObjectBinder.RegisterTypeReader(typeof(SyntaxTokenWithTrivia), r => new SyntaxTokenWithTrivia(r));
+            }
+
             protected readonly GreenNode LeadingField;
             protected readonly GreenNode TrailingField;
 
@@ -57,11 +66,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     this.AdjustFlagsAndWidth(trailing);
                     this.TrailingField = trailing;
                 }
-            }
-
-            internal override Func<ObjectReader, object> GetReader()
-            {
-                return r => new SyntaxTokenWithTrivia(r);
             }
 
             internal override void WriteTo(ObjectWriter writer)

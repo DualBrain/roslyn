@@ -1,6 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Diagnostics;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -8,17 +10,27 @@ namespace Microsoft.CodeAnalysis
     {
         private static class TypeParameterOrdinalSymbolKey
         {
-            public static void Create(ITypeParameterSymbol symbol, SymbolKeyWriter visitor)
+            public static void Create(ITypeParameterSymbol symbol, int methodIndex, SymbolKeyWriter visitor)
             {
-                Debug.Assert(visitor.WritingSignature);
-                Debug.Assert(symbol.TypeParameterKind == TypeParameterKind.Method);
+                Contract.ThrowIfFalse(symbol.TypeParameterKind == TypeParameterKind.Method);
+                visitor.WriteInteger(methodIndex);
                 visitor.WriteInteger(symbol.Ordinal);
             }
 
-            public static SymbolKeyResolution Resolve(SymbolKeyReader reader)
+            public static SymbolKeyResolution Resolve(SymbolKeyReader reader, out string? failureReason)
             {
+                var methodIndex = reader.ReadInteger();
                 var ordinal = reader.ReadInteger();
-                var typeParameter = reader.CurrentMethod.TypeParameters[ordinal];
+                var method = reader.ResolveMethod(methodIndex);
+
+                var typeParameter = method?.TypeParameters[ordinal];
+                if (typeParameter == null)
+                {
+                    failureReason = $"({nameof(TypeParameterOrdinalSymbolKey)} failed)";
+                    return default;
+                }
+
+                failureReason = null;
                 return new SymbolKeyResolution(typeParameter);
             }
         }

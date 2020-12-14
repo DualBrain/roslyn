@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
@@ -9,8 +13,10 @@ using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Threading;
 using Microsoft.Cci;
+using Microsoft.CodeAnalysis.PooledObjects;
 using Microsoft.CodeAnalysis;
 using Roslyn.Utilities;
+using Microsoft.CodeAnalysis.Symbols;
 
 namespace Microsoft.CodeAnalysis.Emit
 {
@@ -37,7 +43,7 @@ namespace Microsoft.CodeAnalysis.Emit
         private readonly HeapOrReferenceIndex<string> _moduleRefIndex;
         private readonly InstanceAndStructuralReferenceIndex<ITypeMemberReference> _memberRefIndex;
         private readonly InstanceAndStructuralReferenceIndex<IGenericMethodInstanceReference> _methodSpecIndex;
-        private readonly HeapOrReferenceIndex<ITypeReference> _typeRefIndex;
+        private readonly TypeReferenceIndex _typeRefIndex;
         private readonly InstanceAndStructuralReferenceIndex<ITypeReference> _typeSpecIndex;
         private readonly HeapOrReferenceIndex<BlobHandle> _standAloneSignatureIndex;
         private readonly Dictionary<IMethodDefinition, AddedOrChangedMethodInfo> _addedOrChangedMethods;
@@ -50,11 +56,20 @@ namespace Microsoft.CodeAnalysis.Emit
             DefinitionMap definitionMap,
             SymbolChanges changes,
             CancellationToken cancellationToken)
-            : base(MakeTablesBuilder(previousGeneration), null, null, context, messageProvider, false, false, cancellationToken)
+            : base(metadata: MakeTablesBuilder(previousGeneration),
+                   debugMetadataOpt: (context.Module.DebugInformationFormat == DebugInformationFormat.PortablePdb) ? new MetadataBuilder() : null,
+                   dynamicAnalysisDataWriterOpt: null,
+                   context: context,
+                   messageProvider: messageProvider,
+                   metadataOnly: false,
+                   deterministic: false,
+                   emitTestCoverageData: false,
+                   cancellationToken: cancellationToken)
         {
             Debug.Assert(previousGeneration != null);
             Debug.Assert(encId != default(Guid));
             Debug.Assert(encId != previousGeneration.EncId);
+            Debug.Assert(context.Module.DebugInformationFormat != DebugInformationFormat.Embedded);
 
             _previousGeneration = previousGeneration;
             _encId = encId;
@@ -79,11 +94,11 @@ namespace Microsoft.CodeAnalysis.Emit
             _moduleRefIndex = new HeapOrReferenceIndex<string>(this, lastRowId: sizes[(int)TableIndex.ModuleRef]);
             _memberRefIndex = new InstanceAndStructuralReferenceIndex<ITypeMemberReference>(this, new MemberRefComparer(this), lastRowId: sizes[(int)TableIndex.MemberRef]);
             _methodSpecIndex = new InstanceAndStructuralReferenceIndex<IGenericMethodInstanceReference>(this, new MethodSpecComparer(this), lastRowId: sizes[(int)TableIndex.MethodSpec]);
-            _typeRefIndex = new HeapOrReferenceIndex<ITypeReference>(this, lastRowId: sizes[(int)TableIndex.TypeRef]);
+            _typeRefIndex = new TypeReferenceIndex(this, lastRowId: sizes[(int)TableIndex.TypeRef]);
             _typeSpecIndex = new InstanceAndStructuralReferenceIndex<ITypeReference>(this, new TypeSpecComparer(this), lastRowId: sizes[(int)TableIndex.TypeSpec]);
             _standAloneSignatureIndex = new HeapOrReferenceIndex<BlobHandle>(this, lastRowId: sizes[(int)TableIndex.StandAloneSig]);
 
-            _addedOrChangedMethods = new Dictionary<IMethodDefinition, AddedOrChangedMethodInfo>();
+            _addedOrChangedMethods = new Dictionary<IMethodDefinition, AddedOrChangedMethodInfo>(Cci.SymbolEquivalentEqualityComparer.Instance);
         }
 
         private static MetadataBuilder MakeTablesBuilder(EmitBaseline previousGeneration)
@@ -124,8 +139,6 @@ namespace Microsoft.CodeAnalysis.Emit
 
         internal EmitBaseline GetDelta(EmitBaseline baseline, Compilation compilation, Guid encId, MetadataSizes metadataSizes)
         {
-            var moduleBuilder = (CommonPEModuleBuilder)this.module;
-
             var addedOrChangedMethodsByIndex = new Dictionary<int, AddedOrChangedMethodInfo>();
             foreach (var pair in _addedOrChangedMethods)
             {
@@ -133,7 +146,7 @@ namespace Microsoft.CodeAnalysis.Emit
             }
 
             var previousTableSizes = _previousGeneration.TableEntriesAdded;
-            var deltaTableSizes = this.GetDeltaTableSizes(metadataSizes.RowCounts);
+            var deltaTableSizes = GetDeltaTableSizes(metadataSizes.RowCounts);
             var tableSizes = new int[MetadataTokens.TableCount];
 
             for (int i = 0; i < tableSizes.Length; i++)
@@ -143,18 +156,18 @@ namespace Microsoft.CodeAnalysis.Emit
 
             // If the previous generation is 0 (metadata) get the synthesized members from the current compilation's builder,
             // otherwise members from the current compilation have already been merged into the baseline.
-            var synthesizedMembers = (baseline.Ordinal == 0) ? moduleBuilder.GetSynthesizedMembers() : baseline.SynthesizedMembers;
+            var synthesizedMembers = (baseline.Ordinal == 0) ? module.GetAllSynthesizedMembers() : baseline.SynthesizedMembers;
 
             return baseline.With(
                 compilation,
-                moduleBuilder,
+                module,
                 baseline.Ordinal + 1,
                 encId,
-                typesAdded: AddRange(_previousGeneration.TypesAdded, _typeDefs.GetAdded()),
-                eventsAdded: AddRange(_previousGeneration.EventsAdded, _eventDefs.GetAdded()),
-                fieldsAdded: AddRange(_previousGeneration.FieldsAdded, _fieldDefs.GetAdded()),
-                methodsAdded: AddRange(_previousGeneration.MethodsAdded, _methodDefs.GetAdded()),
-                propertiesAdded: AddRange(_previousGeneration.PropertiesAdded, _propertyDefs.GetAdded()),
+                typesAdded: AddRange(_previousGeneration.TypesAdded, _typeDefs.GetAdded(), comparer: Cci.SymbolEquivalentEqualityComparer.Instance),
+                eventsAdded: AddRange(_previousGeneration.EventsAdded, _eventDefs.GetAdded(), comparer: Cci.SymbolEquivalentEqualityComparer.Instance),
+                fieldsAdded: AddRange(_previousGeneration.FieldsAdded, _fieldDefs.GetAdded(), comparer: Cci.SymbolEquivalentEqualityComparer.Instance),
+                methodsAdded: AddRange(_previousGeneration.MethodsAdded, _methodDefs.GetAdded(), comparer: Cci.SymbolEquivalentEqualityComparer.Instance),
+                propertiesAdded: AddRange(_previousGeneration.PropertiesAdded, _propertyDefs.GetAdded(), comparer: Cci.SymbolEquivalentEqualityComparer.Instance),
                 eventMapAdded: AddRange(_previousGeneration.EventMapAdded, _eventMap.GetAdded()),
                 propertyMapAdded: AddRange(_previousGeneration.PropertyMapAdded, _propertyMap.GetAdded()),
                 methodImplsAdded: AddRange(_previousGeneration.MethodImplsAdded, _methodImpls.GetAdded()),
@@ -167,13 +180,14 @@ namespace Microsoft.CodeAnalysis.Emit
                 userStringStreamLengthAdded: metadataSizes.GetAlignedHeapSize(HeapIndex.UserString) + _previousGeneration.UserStringStreamLengthAdded,
                 // Guid stream accumulates on the GUID heap unlike other heaps, so the previous generations are already included.
                 guidStreamLengthAdded: metadataSizes.HeapSizes[(int)HeapIndex.Guid],
-                anonymousTypeMap: ((IPEDeltaAssemblyBuilder)moduleBuilder).GetAnonymousTypeMap(),
+                anonymousTypeMap: ((IPEDeltaAssemblyBuilder)module).GetAnonymousTypeMap(),
                 synthesizedMembers: synthesizedMembers,
                 addedOrChangedMethods: AddRange(_previousGeneration.AddedOrChangedMethods, addedOrChangedMethodsByIndex, replace: true),
-                debugInformationProvider: baseline.DebugInformationProvider);
+                debugInformationProvider: baseline.DebugInformationProvider,
+                localSignatureProvider: baseline.LocalSignatureProvider);
         }
 
-        private static IReadOnlyDictionary<K, V> AddRange<K, V>(IReadOnlyDictionary<K, V> previous, IReadOnlyDictionary<K, V> current, bool replace = false)
+        private static IReadOnlyDictionary<K, V> AddRange<K, V>(IReadOnlyDictionary<K, V> previous, IReadOnlyDictionary<K, V> current, bool replace = false, IEqualityComparer<K> comparer = null)
         {
             if (previous.Count == 0)
             {
@@ -185,7 +199,7 @@ namespace Microsoft.CodeAnalysis.Emit
                 return previous;
             }
 
-            var result = new Dictionary<K, V>();
+            var result = new Dictionary<K, V>(comparer);
             foreach (var pair in previous)
             {
                 result.Add(pair.Key, pair.Value);
@@ -208,9 +222,9 @@ namespace Microsoft.CodeAnalysis.Emit
             foreach (var def in _methodDefs.GetRows())
             {
                 // The debugger tries to remap all modified methods, which requires presence of sequence points.
-                if (!_methodDefs.IsAddedNotChanged(def) && (def.GetBody(this.Context)?.HasAnySequencePoints ?? false))
+                if (!_methodDefs.IsAddedNotChanged(def) && def.GetBody(Context)?.SequencePoints.Length > 0)
                 {
-                    methods.Add(MetadataTokens.MethodDefinitionHandle((int)_methodDefs[def]));
+                    methods.Add(MetadataTokens.MethodDefinitionHandle(_methodDefs[def]));
                 }
             }
         }
@@ -392,7 +406,7 @@ namespace Microsoft.CodeAnalysis.Emit
 
         protected override int GreatestMethodDefIndex => _methodDefs.NextRowId;
 
-        protected override bool TryGetTypeRefeferenceHandle(ITypeReference reference, out TypeReferenceHandle handle)
+        protected override bool TryGetTypeReferenceHandle(ITypeReference reference, out TypeReferenceHandle handle)
         {
             int index;
             bool result = _typeRefIndex.TryGetValue(reference, out index);
@@ -428,11 +442,6 @@ namespace Microsoft.CodeAnalysis.Emit
         protected override IReadOnlyList<BlobHandle> GetStandaloneSignatureBlobHandles()
         {
             return _standAloneSignatureIndex.Rows;
-        }
-
-        protected override IEnumerable<INamespaceTypeDefinition> GetTopLevelTypes(CommonPEModuleBuilder module)
-        {
-            return _changes.GetTopLevelTypes(this.Context);
         }
 
         protected override void OnIndicesCreated()
@@ -478,7 +487,7 @@ namespace Microsoft.CodeAnalysis.Emit
             var ok = _typeDefs.TryGetValue(typeDef, out typeIndex);
             Debug.Assert(ok);
 
-            foreach (var eventDef in typeDef.Events)
+            foreach (var eventDef in typeDef.GetEvents(this.Context))
             {
                 int eventMapIndex;
                 if (!_eventMap.TryGetValue(typeIndex, out eventMapIndex))
@@ -501,7 +510,7 @@ namespace Microsoft.CodeAnalysis.Emit
                     foreach (var paramDef in this.GetParametersToEmit(methodDef))
                     {
                         _parameterDefs.Add(paramDef);
-                        _parameterDefList.Add(KeyValuePair.Create(methodDef, paramDef));
+                        _parameterDefList.Add(KeyValuePairUtil.Create(methodDef, paramDef));
                     }
 
                     if (methodDef.GenericParameterCount > 0)
@@ -568,7 +577,7 @@ namespace Microsoft.CodeAnalysis.Emit
         }
 
         private bool AddDefIfNecessary<T>(DefinitionIndex<T> defIndex, T def)
-            where T : IDefinition
+            where T : class, IDefinition
         {
             switch (_changes.GetChange(def))
             {
@@ -597,18 +606,18 @@ namespace Microsoft.CodeAnalysis.Emit
         {
             foreach (var typeRef in GetTypeRefs())
             {
-                ReportReferencesToAddedSymbol(typeRef as ISymbol);
+                ReportReferencesToAddedSymbol(typeRef.GetInternalSymbol());
             }
 
             foreach (var memberRef in GetMemberRefs())
             {
-                ReportReferencesToAddedSymbol(memberRef as ISymbol);
+                ReportReferencesToAddedSymbol(memberRef.GetInternalSymbol());
             }
         }
 
-        private void ReportReferencesToAddedSymbol(ISymbol symbolOpt)
+        private void ReportReferencesToAddedSymbol(ISymbolInternal symbolOpt)
         {
-            if (symbolOpt != null && _changes.IsAdded(symbolOpt))
+            if (symbolOpt != null && _changes.IsAdded(symbolOpt.GetISymbol()))
             {
                 this.Context.Diagnostics.Add(this.messageProvider.CreateDiagnostic(
                     this.messageProvider.ERR_EncReferenceToAddedMember,
@@ -645,31 +654,27 @@ namespace Microsoft.CodeAnalysis.Emit
 
                     encInfos.Add(CreateEncLocalInfo(local, signature));
                 }
-                
+
                 BlobHandle blobIndex = metadata.GetOrAddBlob(writer);
-                
+
                 localSignatureHandle = GetOrAddStandaloneSignatureHandle(blobIndex);
                 writer.Free();
             }
             else
             {
-                localSignatureHandle = default(StandaloneSignatureHandle);
+                localSignatureHandle = default;
             }
 
-            var method = body.MethodDefinition;
-            if (!method.IsImplicitlyDeclared)
-            {
-                var info = new AddedOrChangedMethodInfo(
-                    body.MethodId,
-                    encInfos.ToImmutable(),
-                    body.LambdaDebugInfo,
-                    body.ClosureDebugInfo,
-                    body.StateMachineTypeName,
-                    body.StateMachineHoistedLocalSlots,
-                    body.StateMachineAwaiterSlots);
+            var info = new AddedOrChangedMethodInfo(
+                body.MethodId,
+                encInfos.ToImmutable(),
+                body.LambdaDebugInfo,
+                body.ClosureDebugInfo,
+                body.StateMachineTypeName,
+                body.StateMachineHoistedLocalSlots,
+                body.StateMachineAwaiterSlots);
 
-                _addedOrChangedMethods.Add(method, info);
-            }
+            _addedOrChangedMethods.Add(body.MethodDefinition, info);
 
             encInfos.Free();
             return localSignatureHandle;
@@ -684,7 +689,7 @@ namespace Microsoft.CodeAnalysis.Emit
 
             // local type is already translated, but not recursively
             ITypeReference translatedType = localDef.Type;
-            ITypeSymbol typeSymbol = translatedType as ITypeSymbol;
+            ITypeSymbolInternal typeSymbol = translatedType.GetInternalSymbol() as ITypeSymbolInternal;
             if (typeSymbol != null)
             {
                 translatedType = Context.Module.EncTranslateType(typeSymbol, Context.Diagnostics);
@@ -741,7 +746,7 @@ namespace Microsoft.CodeAnalysis.Emit
             EditAndContinueOperation addCode,
             EventOrPropertyMapIndex map,
             TableIndex mapTable)
-            where T : ITypeDefinitionMember
+            where T : class, ITypeDefinitionMember
         {
             foreach (var member in index.GetRows())
             {
@@ -769,7 +774,7 @@ namespace Microsoft.CodeAnalysis.Emit
             DefinitionIndex<T> index,
             TableIndex tableIndex,
             EditAndContinueOperation addCode)
-            where T : ITypeDefinitionMember
+            where T : class, ITypeDefinitionMember
         {
             foreach (var member in index.GetRows())
             {
@@ -804,7 +809,7 @@ namespace Microsoft.CodeAnalysis.Emit
         }
 
         private void PopulateEncLogTableRows<T>(DefinitionIndex<T> index, TableIndex tableIndex)
-            where T : IDefinition
+            where T : class, IDefinition
         {
             foreach (var member in index.GetRows())
             {
@@ -882,6 +887,25 @@ namespace Microsoft.CodeAnalysis.Emit
 
             tokens.Free();
 
+            // Populate Portable PDB EncMap table with MethodDebugInformation mapping,
+            // which corresponds 1:1 to MethodDef mapping.
+            if (_debugMetadataOpt != null)
+            {
+                var debugTokens = ArrayBuilder<EntityHandle>.GetInstance();
+                AddDefinitionTokens(debugTokens, _methodDefs, TableIndex.MethodDebugInformation);
+                debugTokens.Sort(HandleComparer.Default);
+
+                // Should not be any duplicates.
+                Debug.Assert(debugTokens.Distinct().Count() == debugTokens.Count);
+
+                foreach (var token in debugTokens)
+                {
+                    _debugMetadataOpt.AddEncMapEntry(token);
+                }
+
+                debugTokens.Free();
+            }
+
 #if DEBUG
             // The following tables are either represented in the EncMap
             // or specifically ignored. The rest should be empty.
@@ -955,7 +979,7 @@ namespace Microsoft.CodeAnalysis.Emit
         }
 
         private static void AddDefinitionTokens<T>(ArrayBuilder<EntityHandle> tokens, DefinitionIndex<T> index, TableIndex tableIndex)
-            where T : IDefinition
+            where T : class, IDefinition
         {
             foreach (var member in index.GetRows())
             {
@@ -990,9 +1014,9 @@ namespace Microsoft.CodeAnalysis.Emit
             private readonly int _firstRowId; // First row in this generation.
             private bool _frozen;
 
-            public DefinitionIndexBase(int lastRowId)
+            public DefinitionIndexBase(int lastRowId, IEqualityComparer<T> comparer = null)
             {
-                this.added = new Dictionary<T, int>();
+                this.added = new Dictionary<T, int>(comparer);
                 this.rows = new List<T>();
                 _firstRowId = lastRowId + 1;
             }
@@ -1067,7 +1091,7 @@ namespace Microsoft.CodeAnalysis.Emit
             }
         }
 
-        private sealed class DefinitionIndex<T> : DefinitionIndexBase<T> where T : IDefinition
+        private sealed class DefinitionIndex<T> : DefinitionIndexBase<T> where T : class, IDefinition
         {
             public delegate bool TryGetExistingIndex(T item, out int index);
 
@@ -1080,7 +1104,7 @@ namespace Microsoft.CodeAnalysis.Emit
             private readonly Dictionary<int, T> _map;
 
             public DefinitionIndex(TryGetExistingIndex tryGetExistingIndex, int lastRowId)
-                : base(lastRowId)
+                : base(lastRowId, ReferenceEqualityComparer.Instance)
             {
                 _tryGetExistingIndex = tryGetExistingIndex;
                 _map = new Dictionary<int, T>();
@@ -1295,7 +1319,7 @@ namespace Microsoft.CodeAnalysis.Emit
         private sealed class ParameterDefinitionIndex : DefinitionIndexBase<IParameterDefinition>
         {
             public ParameterDefinitionIndex(int lastRowId)
-                : base(lastRowId)
+                : base(lastRowId, ReferenceEqualityComparer.Instance)
             {
             }
 
@@ -1317,7 +1341,7 @@ namespace Microsoft.CodeAnalysis.Emit
         private sealed class GenericParameterIndex : DefinitionIndexBase<IGenericParameter>
         {
             public GenericParameterIndex(int lastRowId)
-                : base(lastRowId)
+                : base(lastRowId, ReferenceEqualityComparer.Instance)
             {
             }
 
@@ -1422,7 +1446,7 @@ namespace Microsoft.CodeAnalysis.Emit
 
             public override void Visit(CommonPEModuleBuilder module)
             {
-                this.Visit(((DeltaMetadataWriter)this.metadataWriter).GetTopLevelTypes(module));
+                Visit(module.GetTopLevelTypeDefinitions(metadataWriter.Context));
             }
 
             public override void Visit(IEventDefinition eventDefinition)

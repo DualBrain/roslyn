@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Immutable;
@@ -56,14 +60,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
         }
 
         private bool IsClassView()
-        {
-            return Helpers.IsClassView(_flags);
-        }
-
-        private bool IsFindSymbol()
-        {
-            return Helpers.IsFindSymbol(_flags);
-        }
+            => Helpers.IsClassView(_flags);
 
         private ObjectListItem GetListItem(uint index)
         {
@@ -102,8 +99,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
         {
             if (srcType == VSOBJGOTOSRCTYPE.GS_DEFINITION)
             {
-                var symbolItem = GetListItem(index) as SymbolListItem;
-                if (symbolItem != null)
+                if (GetListItem(index) is SymbolListItem symbolItem)
                 {
                     return symbolItem.SupportsGoToDefinition;
                 }
@@ -422,8 +418,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
 
         private bool IsExpandableType(uint index)
         {
-            var typeListItem = GetListItem(index) as TypeListItem;
-            if (typeListItem == null)
+            if (!(GetListItem(index) is TypeListItem typeListItem))
             {
                 return false;
             }
@@ -461,9 +456,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
         }
 
         protected override uint GetItemCount()
-        {
-            return (uint)_items.Length;
-        }
+            => (uint)_items.Length;
 
         protected override IVsSimpleObjectList2 GetList(uint index, uint listType, uint flags, VSOBSEARCHCRITERIA2[] pobSrch)
         {
@@ -536,8 +529,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
 
         protected override object GetBrowseObject(uint index)
         {
-            var symbolListItem = GetListItem(index) as SymbolListItem;
-            if (symbolListItem != null)
+            if (GetListItem(index) is SymbolListItem symbolListItem)
             {
                 return this.LibraryManager.Workspace.GetBrowseObject(symbolListItem);
             }
@@ -558,8 +550,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                 return null;
             }
 
-            var projectListItem = listItem as ProjectListItem;
-            if (projectListItem != null)
+            if (listItem is ProjectListItem projectListItem)
             {
                 var project = this.LibraryManager.GetProject(projectListItem.ProjectId);
                 if (project != null)
@@ -568,14 +559,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                 }
             }
 
-            var referenceListItem = listItem as ReferenceListItem;
-            if (referenceListItem != null)
+            if (listItem is ReferenceListItem referenceListItem)
             {
                 return this.LibraryManager.LibraryService.NavInfoFactory.CreateForReference(referenceListItem.MetadataReference);
             }
 
-            var symbolListItem = listItem as SymbolListItem;
-            if (symbolListItem != null)
+            if (listItem is SymbolListItem symbolListItem)
             {
                 return this.LibraryManager.GetNavInfo(symbolListItem, useExpandedHierarchy: IsClassView());
             }
@@ -611,7 +600,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                 return false;
             }
 
-            if (ErrorHandler.Failed(pNavInfoNode.get_Type(out var type)))
+            if (ErrorHandler.Failed(pNavInfoNode.get_Type(out _)))
             {
                 return false;
             }
@@ -685,8 +674,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                     return true;
 
                 case _VSOBJLISTELEMPROPID.VSOBJLISTELEMPROPID_HELPKEYWORD:
-                    var symbolListItem = listItem as SymbolListItem;
-                    if (symbolListItem != null)
+                    if (listItem is SymbolListItem symbolListItem)
                     {
                         var project = this.LibraryManager.Workspace.CurrentSolution.GetProject(symbolListItem.ProjectId);
                         if (project != null)
@@ -744,21 +732,16 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
         }
 
         protected override string GetText(uint index, VSTREETEXTOPTIONS tto)
-        {
-            return GetDisplayText(index, tto);
-        }
+            => GetDisplayText(index, tto);
 
         protected override string GetTipText(uint index, VSTREETOOLTIPTYPE eTipType)
-        {
-            return null;
-        }
+            => null;
 
         protected override int GoToSource(uint index, VSOBJGOTOSRCTYPE srcType)
         {
             if (srcType == VSOBJGOTOSRCTYPE.GS_DEFINITION)
             {
-                var symbolItem = GetListItem(index) as SymbolListItem;
-                if (symbolItem != null && symbolItem.SupportsGoToDefinition)
+                if (GetListItem(index) is SymbolListItem symbolItem && symbolItem.SupportsGoToDefinition)
                 {
                     var project = this.LibraryManager.Workspace.CurrentSolution.GetProject(symbolItem.ProjectId);
                     var compilation = project.GetCompilationAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None);
@@ -852,14 +835,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
 
                 if (data.type == VSCOMPONENTTYPE.VSCOMPONENTTYPE_ComPlus)
                 {
-                    var referenceListItem = listItem as ReferenceListItem;
-                    if (referenceListItem == null)
+                    if (!(listItem is ReferenceListItem referenceListItem))
                     {
                         continue;
                     }
 
-                    var metadataReference = referenceListItem.MetadataReference as PortableExecutableReference;
-                    if (metadataReference == null)
+                    if (!(referenceListItem.MetadataReference is PortableExecutableReference metadataReference))
                     {
                         continue;
                     }
@@ -880,8 +861,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                         continue;
                     }
 
-                    var vsSolution = this.LibraryManager.ServiceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
-                    if (vsSolution == null)
+                    if (!(this.LibraryManager.ServiceProvider.GetService(typeof(SVsSolution)) is IVsSolution vsSolution))
                     {
                         return false;
                     }
@@ -906,8 +886,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
         {
             var listItem = GetListItem(index);
 
-            var projectListItem = listItem as ProjectListItem;
-            if (projectListItem != null)
+            if (listItem is ProjectListItem projectListItem)
             {
                 var hierarchy = this.LibraryManager.Workspace.GetHierarchy(projectListItem.ProjectId);
                 if (hierarchy == null)
@@ -915,8 +894,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                     return false;
                 }
 
-                var vsSolution = this.LibraryManager.ServiceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
-                if (vsSolution == null)
+                if (!(this.LibraryManager.ServiceProvider.GetService(typeof(SVsSolution)) is IVsSolution vsSolution))
                 {
                     return false;
                 }
@@ -939,14 +917,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
             }
             else
             {
-                var referenceListItem = listItem as ReferenceListItem;
-                if (referenceListItem == null)
+                if (!(listItem is ReferenceListItem referenceListItem))
                 {
                     return false;
                 }
 
-                var portableExecutableReference = referenceListItem.MetadataReference as PortableExecutableReference;
-                if (portableExecutableReference == null)
+                if (!(referenceListItem.MetadataReference is PortableExecutableReference portableExecutableReference))
                 {
                     return false;
                 }

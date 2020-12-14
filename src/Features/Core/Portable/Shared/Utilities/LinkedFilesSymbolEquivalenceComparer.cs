@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 
@@ -11,16 +15,12 @@ namespace Microsoft.CodeAnalysis.Shared.Utilities
     /// </summary>
     internal sealed class LinkedFilesSymbolEquivalenceComparer : IEqualityComparer<ISymbol>
     {
-        public static readonly LinkedFilesSymbolEquivalenceComparer Instance = new LinkedFilesSymbolEquivalenceComparer();
+        public static readonly LinkedFilesSymbolEquivalenceComparer Instance = new();
 
         bool IEqualityComparer<ISymbol>.Equals(ISymbol x, ISymbol y)
-        {
-            return x.Name == y.Name;
-        }
+            => x.Name == y.Name;
 
         int IEqualityComparer<ISymbol>.GetHashCode(ISymbol symbol)
-        {
-            return symbol.Name.GetHashCode();
-        }
+            => symbol.Name.GetHashCode();
     }
 }

@@ -1,9 +1,12 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection.Metadata;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CodeGen
 {
@@ -16,12 +19,12 @@ namespace Microsoft.CodeAnalysis.CodeGen
         public LocalConstantDefinition(
             string name,
             Location location,
-            Cci.IMetadataConstant compileTimeValue,
-            ImmutableArray<TypedConstant> dynamicTransformFlags,
-            ImmutableArray<TypedConstant> tupleElementNames)
+            MetadataConstant compileTimeValue,
+            ImmutableArray<bool> dynamicTransformFlags,
+            ImmutableArray<string> tupleElementNames)
         {
-            Debug.Assert(!string.IsNullOrEmpty(name));
-            Debug.Assert(compileTimeValue != null);
+            RoslynDebug.Assert(!RoslynString.IsNullOrEmpty(name));
+            RoslynDebug.Assert(compileTimeValue != null);
 
             Name = name;
             Location = location;
@@ -34,7 +37,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public Location Location { get; }
 
-        public Cci.IMetadataConstant CompileTimeValue { get; }
+        public MetadataConstant CompileTimeValue { get; }
 
         public Cci.ITypeReference Type => CompileTimeValue.Type;
 
@@ -53,13 +56,13 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public LocalVariableAttributes PdbAttributes => LocalVariableAttributes.None;
 
-        public ImmutableArray<TypedConstant> DynamicTransformFlags { get; }
+        public ImmutableArray<bool> DynamicTransformFlags { get; }
 
-        public ImmutableArray<TypedConstant> TupleElementNames { get; }
+        public ImmutableArray<string> TupleElementNames { get; }
 
         public int SlotIndex => -1;
 
-        public byte[] Signature => null;
+        public byte[]? Signature => null;
 
         public LocalSlotDebugInfo SlotInfo
             => new LocalSlotDebugInfo(SynthesizedLocalKind.UserDefined, LocalDebugId.None);

@@ -1,9 +1,14 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CodeRefactorings;
 using Microsoft.CodeAnalysis.CSharp.ConvertToInterpolatedString;
 using Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.CodeRefactorings;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
 using Xunit;
 
@@ -11,13 +16,13 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.ConvertToInterpolatedSt
 {
     public class ConvertPlaceholderToInterpolatedStringTests : AbstractCSharpCodeActionTest
     {
-        protected override CodeRefactoringProvider CreateCodeRefactoringProvider(Workspace workspace) =>
-            new CSharpConvertPlaceholderToInterpolatedStringRefactoringProvider();
+        protected override CodeRefactoringProvider CreateCodeRefactoringProvider(Workspace workspace, TestParameters parameters)
+            => new CSharpConvertPlaceholderToInterpolatedStringRefactoringProvider();
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestSingleItemSubstitution()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -41,7 +46,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemOrdering()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -65,7 +70,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemOrdering2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -89,7 +94,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemOrdering3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -113,7 +118,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemOutsideRange()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -137,7 +142,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemDoNotHaveCast()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -161,7 +166,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemWithSyntaxErrorDoesHaveCast()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -185,7 +190,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestItemWithoutSyntaxErrorDoesNotHaveCast()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -209,7 +214,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestParenthesisAddedForTernaryExpression()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -233,7 +238,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestDoesNotAddDoubleParenthesisForTernaryExpression()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -257,7 +262,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestMultiLineExpression()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -283,7 +288,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatSpecifiers()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -310,7 +315,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatSpecifiers2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -334,7 +339,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatSpecifiers3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class T
 {
@@ -365,7 +370,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatSpecifiers4()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -389,7 +394,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatSpecifiers5()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class T
@@ -443,7 +448,7 @@ public class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatSpecifiers6()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class T
@@ -487,7 +492,7 @@ public class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestVerbatimStringLiteral()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class T
@@ -522,7 +527,7 @@ And {value2,10} ({value2,8:X8})
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestFormatWithParams()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 public class T
@@ -545,7 +550,7 @@ public class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestInvalidInteger()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class T
@@ -569,7 +574,7 @@ public class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestOutVariableDeclaration_01()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -584,7 +589,7 @@ class T
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
         public async Task TestOutVariableDeclaration_02()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class T
@@ -592,6 +597,201 @@ class T
     void M()
     {
         var a = [|string.Format(out string x, 1)|];
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        public async Task TestFormatWithNamedArguments1()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = [|string.Format(arg0: ""test"", arg1: ""also"", format: ""This {0} {1} works"")|];
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""This {""test""} {""also""} works"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        public async Task TestFormatWithNamedArguments2()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = [|string.Format(""This {0} {1} works"", arg1: ""also"", arg0: ""test"")|];
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""This {""test""} {""also""} works"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        public async Task TestFormatWithNamedArguments3()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = [|string.Format(""{0} {1} {2}"", ""10"", arg1: ""11"", arg2: ""12"" )|];
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""{""10""} {""11""} {""12""}"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        public async Task TestFormatWithNamedArguments4()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = [|string.Format(""{0} {1} {2}"", ""10"", arg2: ""12"", arg1: ""11"")|];
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""{""10""} {""11""} {""12""}"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        public async Task TestFormatWithNamedArguments5()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = [|string.Format(""{0} {1} {2} {3}"", ""10"", arg1: ""11"", arg2: ""12"")|];
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""{""10""} {""11""} {""12""} {3}"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        [WorkItem(35525, "https://github.com/dotnet/roslyn/issues/35525")]
+        public async Task TestOnlyArgumentSelection1()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = string.Format([|""{0}""|], 1);
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""{1}"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        [WorkItem(35525, "https://github.com/dotnet/roslyn/issues/35525")]
+        public async Task TestOnlyArgumentSelection2()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = string.Format(""{0}"", [|1|]);
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""{1}"";
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)]
+        [WorkItem(35525, "https://github.com/dotnet/roslyn/issues/35525")]
+        public async Task TestArgumentsSelection2()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = string.Format([|""{0}"", 1|]);
+    }
+}",
+@"using System;
+
+class T
+{
+    void M()
+    {
+        var a = $""{1}"";
     }
 }");
         }

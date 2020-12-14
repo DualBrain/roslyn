@@ -1,13 +1,19 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics.Analyzers.NamingStyles;
 using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.Notification;
 using Microsoft.VisualStudio.LanguageServices.Implementation.Utilities;
+using Roslyn.Utilities;
 using static Microsoft.CodeAnalysis.Diagnostics.Analyzers.NamingStyles.SymbolSpecification;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.NamingPreferences
@@ -23,14 +29,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
 
         public bool CanBeDeleted { get; set; }
 
-        
-
         private readonly INotificationService _notificationService;
 
         public SymbolSpecificationViewModel(
             string languageName,
             bool canBeDeleted,
-            INotificationService notificationService) : this(languageName, new SymbolSpecification(), canBeDeleted, notificationService) { }
+            INotificationService notificationService) : this(languageName, CreateDefaultSymbolSpecification(), canBeDeleted, notificationService) { }
 
         public SymbolSpecificationViewModel(string languageName, SymbolSpecification specification, bool canBeDeleted, INotificationService notificationService)
         {
@@ -44,17 +48,23 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             {
                 SymbolKindList = new List<SymbolKindViewModel>
                 {
-                    new SymbolKindViewModel(TypeKind.Class, "class", specification),
-                    new SymbolKindViewModel(TypeKind.Struct, "struct", specification),
-                    new SymbolKindViewModel(TypeKind.Interface, "interface", specification),
-                    new SymbolKindViewModel(TypeKind.Enum, "enum", specification),
-                    new SymbolKindViewModel(SymbolKind.Property, "property", specification),
-                    new SymbolKindViewModel(SymbolKind.Method, "method", specification),
-                    new SymbolKindViewModel(SymbolKind.Field, "field", specification),
-                    new SymbolKindViewModel(SymbolKind.Event, "event", specification),
-                    new SymbolKindViewModel(TypeKind.Delegate, "delegate", specification),
+                    new SymbolKindViewModel(SymbolKind.Namespace, ServicesVSResources.NamingSpecification_CSharp_Namespace, specification),
+                    new SymbolKindViewModel(TypeKind.Class, ServicesVSResources.NamingSpecification_CSharp_Class, specification),
+                    new SymbolKindViewModel(TypeKind.Struct, ServicesVSResources.NamingSpecification_CSharp_Struct, specification),
+                    new SymbolKindViewModel(TypeKind.Interface, ServicesVSResources.NamingSpecification_CSharp_Interface, specification),
+                    new SymbolKindViewModel(TypeKind.Enum, ServicesVSResources.NamingSpecification_CSharp_Enum, specification),
+                    new SymbolKindViewModel(SymbolKind.Property, ServicesVSResources.NamingSpecification_CSharp_Property, specification),
+                    new SymbolKindViewModel(MethodKind.Ordinary, ServicesVSResources.NamingSpecification_CSharp_Method, specification),
+                    new SymbolKindViewModel(MethodKind.LocalFunction, ServicesVSResources.NamingSpecification_CSharp_LocalFunction, specification),
+                    new SymbolKindViewModel(SymbolKind.Field, ServicesVSResources.NamingSpecification_CSharp_Field, specification),
+                    new SymbolKindViewModel(SymbolKind.Event, ServicesVSResources.NamingSpecification_CSharp_Event, specification),
+                    new SymbolKindViewModel(TypeKind.Delegate, ServicesVSResources.NamingSpecification_CSharp_Delegate, specification),
+                    new SymbolKindViewModel(SymbolKind.Parameter, ServicesVSResources.NamingSpecification_CSharp_Parameter, specification),
+                    new SymbolKindViewModel(SymbolKind.TypeParameter, ServicesVSResources.NamingSpecification_CSharp_TypeParameter, specification),
+                    new SymbolKindViewModel(SymbolKind.Local, ServicesVSResources.NamingSpecification_CSharp_Local, specification)
                 };
 
+                // Not localized because they're language keywords
                 AccessibilityList = new List<AccessibilityViewModel>
                 {
                     new AccessibilityViewModel(Accessibility.Public, "public", specification),
@@ -62,8 +72,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
                     new AccessibilityViewModel(Accessibility.Private, "private", specification),
                     new AccessibilityViewModel(Accessibility.Protected, "protected", specification),
                     new AccessibilityViewModel(Accessibility.ProtectedOrInternal, "protected internal", specification),
+                    new AccessibilityViewModel(Accessibility.ProtectedAndInternal, "private protected", specification),
+                    new AccessibilityViewModel(Accessibility.NotApplicable, "local", specification),
                 };
 
+                // Not localized because they're language keywords
                 ModifierList = new List<ModifierViewModel>
                 {
                     new ModifierViewModel(DeclarationModifiers.Abstract, "abstract", specification),
@@ -77,18 +90,23 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             {
                 SymbolKindList = new List<SymbolKindViewModel>
                 {
-                    new SymbolKindViewModel(TypeKind.Class, "Class", specification),
-                    new SymbolKindViewModel(TypeKind.Struct, "Structure", specification),
-                    new SymbolKindViewModel(TypeKind.Interface, "Interface", specification),
-                    new SymbolKindViewModel(TypeKind.Enum, "Enum", specification),
-                    new SymbolKindViewModel(TypeKind.Module, "Module", specification),
-                    new SymbolKindViewModel(SymbolKind.Property, "Property", specification),
-                    new SymbolKindViewModel(SymbolKind.Method, "Method", specification),
-                    new SymbolKindViewModel(SymbolKind.Field, "Field", specification),
-                    new SymbolKindViewModel(SymbolKind.Event, "Event", specification),
-                    new SymbolKindViewModel(TypeKind.Delegate, "Delegate", specification),
+                    new SymbolKindViewModel(SymbolKind.Namespace, ServicesVSResources.NamingSpecification_VisualBasic_Namespace, specification),
+                    new SymbolKindViewModel(TypeKind.Class, ServicesVSResources.NamingSpecification_VisualBasic_Class, specification),
+                    new SymbolKindViewModel(TypeKind.Struct, ServicesVSResources.NamingSpecification_VisualBasic_Structure, specification),
+                    new SymbolKindViewModel(TypeKind.Interface, ServicesVSResources.NamingSpecification_VisualBasic_Interface, specification),
+                    new SymbolKindViewModel(TypeKind.Enum, ServicesVSResources.NamingSpecification_VisualBasic_Enum, specification),
+                    new SymbolKindViewModel(TypeKind.Module, ServicesVSResources.NamingSpecification_VisualBasic_Module, specification),
+                    new SymbolKindViewModel(SymbolKind.Property, ServicesVSResources.NamingSpecification_VisualBasic_Property, specification),
+                    new SymbolKindViewModel(SymbolKind.Method, ServicesVSResources.NamingSpecification_VisualBasic_Method, specification),
+                    new SymbolKindViewModel(SymbolKind.Field, ServicesVSResources.NamingSpecification_VisualBasic_Field, specification),
+                    new SymbolKindViewModel(SymbolKind.Event, ServicesVSResources.NamingSpecification_VisualBasic_Event, specification),
+                    new SymbolKindViewModel(TypeKind.Delegate, ServicesVSResources.NamingSpecification_VisualBasic_Delegate, specification),
+                    new SymbolKindViewModel(SymbolKind.Parameter, ServicesVSResources.NamingSpecification_VisualBasic_Parameter, specification),
+                    new SymbolKindViewModel(SymbolKind.TypeParameter, ServicesVSResources.NamingSpecification_VisualBasic_TypeParameter, specification),
+                    new SymbolKindViewModel(SymbolKind.Local, ServicesVSResources.NamingSpecification_VisualBasic_Local, specification)
                 };
 
+                // Not localized because they're language keywords
                 AccessibilityList = new List<AccessibilityViewModel>
                 {
                     new AccessibilityViewModel(Accessibility.Public, "Public", specification),
@@ -96,8 +114,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
                     new AccessibilityViewModel(Accessibility.Private, "Private", specification),
                     new AccessibilityViewModel(Accessibility.Protected , "Protected", specification),
                     new AccessibilityViewModel(Accessibility.ProtectedOrInternal, "Protected Friend", specification),
+                    new AccessibilityViewModel(Accessibility.ProtectedAndInternal, "Private Protected", specification),
+                    new AccessibilityViewModel(Accessibility.NotApplicable, "Local", specification),
                 };
 
+                // Not localized because they're language keywords
                 ModifierList = new List<ModifierViewModel>
                 {
                     new ModifierViewModel(DeclarationModifiers.Abstract, "MustInherit", specification),
@@ -124,9 +145,9 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             return new SymbolSpecification(
                 ID,
                 ItemName,
-                SymbolKindList.Where(s => s.IsChecked).Select(s => s.CreateSymbolKindOrTypeKind()).ToList(),
-                AccessibilityList.Where(a => a.IsChecked).Select(a => new SymbolSpecification.AccessibilityKind(a._accessibility)).ToList(),
-                ModifierList.Where(m => m.IsChecked).Select(m => new ModifierKind(m._modifier)).ToList());
+                SymbolKindList.Where(s => s.IsChecked).Select(s => s.CreateSymbolOrTypeOrMethodKind()).ToImmutableArray(),
+                AccessibilityList.Where(a => a.IsChecked).Select(a => a._accessibility).ToImmutableArray(),
+                ModifierList.Where(m => m.IsChecked).Select(m => new ModifierKind(m._modifier)).ToImmutableArray());
         }
 
         internal bool TrySubmit()
@@ -139,6 +160,10 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
 
             return true;
         }
+
+        // For screen readers
+        public override string ToString()
+            => _symbolSpecName;
 
         internal interface ISymbolSpecificationViewModelPart
         {
@@ -156,33 +181,38 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
 
             private readonly SymbolKind? _symbolKind;
             private readonly TypeKind? _typeKind;
+            private readonly MethodKind? _methodKind;
 
             private bool _isChecked;
 
             public SymbolKindViewModel(SymbolKind symbolKind, string name, SymbolSpecification specification)
             {
-                this._symbolKind = symbolKind;
+                _symbolKind = symbolKind;
                 Name = name;
                 IsChecked = specification.ApplicableSymbolKindList.Any(k => k.SymbolKind == symbolKind);
             }
 
             public SymbolKindViewModel(TypeKind typeKind, string name, SymbolSpecification specification)
             {
-                this._typeKind = typeKind;
+                _typeKind = typeKind;
                 Name = name;
                 IsChecked = specification.ApplicableSymbolKindList.Any(k => k.TypeKind == typeKind);
             }
 
-            internal SymbolKindOrTypeKind CreateSymbolKindOrTypeKind()
+            public SymbolKindViewModel(MethodKind methodKind, string name, SymbolSpecification specification)
             {
-                if (_symbolKind.HasValue)
-                {
-                    return new SymbolKindOrTypeKind(_symbolKind.Value);
-                }
-                else
-                {
-                    return new SymbolKindOrTypeKind(_typeKind.Value);
-                }
+                _methodKind = methodKind;
+                Name = name;
+                IsChecked = specification.ApplicableSymbolKindList.Any(k => k.MethodKind == methodKind);
+            }
+
+            internal SymbolKindOrTypeKind CreateSymbolOrTypeOrMethodKind()
+            {
+                return
+                    _symbolKind.HasValue ? new SymbolKindOrTypeKind(_symbolKind.Value) :
+                    _typeKind.HasValue ? new SymbolKindOrTypeKind(_typeKind.Value) :
+                    _methodKind.HasValue ? new SymbolKindOrTypeKind(_methodKind.Value) :
+                    throw ExceptionUtilities.Unreachable;
             }
         }
 
@@ -204,7 +234,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
                 _accessibility = accessibility;
                 Name = name;
 
-                IsChecked = specification.ApplicableAccessibilityList.Any(a => a.Accessibility == accessibility);
+                IsChecked = specification.ApplicableAccessibilityList.Any(a => a == accessibility);
             }
         }
 

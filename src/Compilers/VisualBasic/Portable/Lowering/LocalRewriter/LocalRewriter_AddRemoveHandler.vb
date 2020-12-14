@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
@@ -13,7 +15,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim rewritten = RewriteAddRemoveHandler(node)
 
             If Instrument(node, rewritten) Then
-                rewritten = _instrumenter.InstrumentAddHandlerStatement(node, rewritten)
+                rewritten = _instrumenterOpt.InstrumentAddHandlerStatement(node, rewritten)
             End If
 
             Return rewritten
@@ -23,7 +25,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim rewritten = RewriteAddRemoveHandler(node)
 
             If Instrument(node, rewritten) Then
-                rewritten = _instrumenter.InstrumentRemoveHandlerStatement(node, rewritten)
+                rewritten = _instrumenterOpt.InstrumentRemoveHandlerStatement(node, rewritten)
             End If
 
             Return rewritten
@@ -143,7 +145,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         syntax,
                         LookupResultKind.Empty,
                         ImmutableArray.Create(Of Symbol)(eventSymbol),
-                        ImmutableArray(Of BoundNode).Empty,
+                        ImmutableArray(Of BoundExpression).Empty,
                         ErrorTypeSymbol.UnknownResultType,
                         hasErrors:=True))
             End If
@@ -283,7 +285,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             ' but the com event binder needs the event to exist on the local type. We'll poke the pia reference
             ' cache directly so that the event is embedded.
             If _emitModule IsNot Nothing Then
-                _emitModule.EmbeddedTypesManagerOpt.EmbedEventIfNeedTo([event], node.Syntax, _diagnostics, isUsedForComAwareEventBinding:=True)
+                _emitModule.EmbeddedTypesManagerOpt.EmbedEventIfNeedTo([event].GetCciAdapter(), node.Syntax, _diagnostics, isUsedForComAwareEventBinding:=True)
             End If
 
             If result IsNot Nothing Then
@@ -293,7 +295,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return New BoundBadExpression(node.Syntax,
                                           LookupResultKind.NotCreatable,
                                           ImmutableArray.Create(Of Symbol)([event]),
-                                          ImmutableArray.Create(Of BoundNode)(receiver, handler),
+                                          ImmutableArray.Create(receiver, handler),
                                           ErrorTypeSymbol.UnknownResultType,
                                           hasErrors:=True)
         End Function

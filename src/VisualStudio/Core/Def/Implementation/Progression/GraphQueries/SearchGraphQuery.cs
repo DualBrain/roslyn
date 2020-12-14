@@ -1,17 +1,21 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.PooledObjects;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
-using Microsoft.CodeAnalysis.PatternMatching;
 using Microsoft.CodeAnalysis.Shared.Extensions;
-using Microsoft.CodeAnalysis.Shared.Utilities;
 using Microsoft.VisualStudio.GraphModel;
 using Roslyn.Utilities;
+using System.Runtime.ExceptionServices;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
 {
@@ -20,9 +24,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
         private readonly string _searchPattern;
 
         public SearchGraphQuery(string searchPattern)
-        {
-            _searchPattern = searchPattern;
-        }
+            => _searchPattern = searchPattern;
 
         public async Task<GraphBuilder> GetGraphAsync(Solution solution, IGraphContext context, CancellationToken cancellationToken)
         {
@@ -50,9 +52,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        if (symbol is INamedTypeSymbol)
+                        if (symbol is INamedTypeSymbol namedType)
                         {
-                            await AddLinkedNodeForType(project, (INamedTypeSymbol)symbol, graphBuilder, symbol.DeclaringSyntaxReferences.Select(d => d.SyntaxTree)).ConfigureAwait(false);
+                            await AddLinkedNodeForTypeAsync(
+                                project, namedType, graphBuilder,
+                                symbol.DeclaringSyntaxReferences.Select(d => d.SyntaxTree)).ConfigureAwait(false);
                         }
                         else
                         {
@@ -63,13 +67,15 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
             }
         }
 
-        private async Task<GraphNode> AddLinkedNodeForType(Project project, INamedTypeSymbol namedType, GraphBuilder graphBuilder, IEnumerable<SyntaxTree> syntaxTrees)
+        private async Task<GraphNode> AddLinkedNodeForTypeAsync(
+            Project project, INamedTypeSymbol namedType, GraphBuilder graphBuilder, IEnumerable<SyntaxTree> syntaxTrees)
         {
             // If this named type is contained in a parent type, then just link farther up
             if (namedType.ContainingType != null)
             {
-                var parentTypeNode = await AddLinkedNodeForType(project, namedType.ContainingType, graphBuilder, syntaxTrees).ConfigureAwait(false);
-                var typeNode = await graphBuilder.AddNodeForSymbolAsync(namedType, relatedNode: parentTypeNode).ConfigureAwait(false);
+                var parentTypeNode = await AddLinkedNodeForTypeAsync(
+                    project, namedType.ContainingType, graphBuilder, syntaxTrees).ConfigureAwait(false);
+                var typeNode = await graphBuilder.AddNodeAsync(namedType, relatedNode: parentTypeNode).ConfigureAwait(false);
                 graphBuilder.AddLink(parentTypeNode, GraphCommonSchema.Contains, typeNode);
 
                 return typeNode;
@@ -77,7 +83,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
             else
             {
                 // From here, we can link back up to the containing project item
-                var typeNode = await graphBuilder.AddNodeForSymbolAsync(namedType, contextProject: project, contextDocument: null).ConfigureAwait(false);
+                var typeNode = await graphBuilder.AddNodeAsync(namedType, contextProject: project, contextDocument: null).ConfigureAwait(false);
 
                 foreach (var tree in syntaxTrees)
                 {
@@ -92,14 +98,18 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
             }
         }
 
-        private async Task<GraphNode> AddLinkedNodeForMemberAsync(Project project, ISymbol member, GraphBuilder graphBuilder)
+        private async Task<GraphNode> AddLinkedNodeForMemberAsync(
+            Project project, ISymbol symbol, GraphBuilder graphBuilder)
         {
+            var member = symbol;
             Contract.ThrowIfNull(member.ContainingType);
 
             var trees = member.DeclaringSyntaxReferences.Select(d => d.SyntaxTree);
 
-            var parentTypeNode = await AddLinkedNodeForType(project, member.ContainingType, graphBuilder, trees).ConfigureAwait(false);
-            var memberNode = await graphBuilder.AddNodeForSymbolAsync(member, relatedNode: parentTypeNode).ConfigureAwait(false);
+            var parentTypeNode = await AddLinkedNodeForTypeAsync(
+                project, member.ContainingType, graphBuilder, trees).ConfigureAwait(false);
+            var memberNode = await graphBuilder.AddNodeAsync(
+                symbol, relatedNode: parentTypeNode).ConfigureAwait(false);
             graphBuilder.AddLink(parentTypeNode, GraphCommonSchema.Contains, memberNode);
 
             return memberNode;
@@ -108,45 +118,55 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
         internal async Task<ImmutableArray<ISymbol>> FindNavigableSourceSymbolsAsync(
             Project project, CancellationToken cancellationToken)
         {
-            var results = ArrayBuilder<ISymbol>.GetInstance();
+            ImmutableArray<ISymbol> declarations;
 
-            // The compiler API only supports a predicate which is given a symbol's name.  Because
-            // we only have the name, and nothing else, we need to check it against the last segment
-            // of the pattern.  i.e. if the pattern is 'Console.WL' and we are given 'WriteLine', then
-            // we don't want to check the whole pattern against it (as it will clearly fail), instead
-            // we only want to check the 'WL' portion.  Then, after we get all the candidate symbols
-            // we'll check if the full name matches the full pattern.
-            var patternMatcher = new PatternMatcher(_searchPattern);
-            var symbols = await SymbolFinder.FindSourceDeclarationsAsync(
-                project, k => !patternMatcher.GetMatchesForLastSegmentOfPattern(k).IsDefaultOrEmpty, SymbolFilter.TypeAndMember, cancellationToken).ConfigureAwait(false);
+            // FindSourceDeclarationsWithPatternAsync calls into OOP to do the search; if something goes badly it
+            // throws a SoftCrashException which inherits from OperationCanceledException. This is unfortunate, because
+            // it means that other bits of code see this as a cancellation and then may crash because they expect that if this
+            // method is raising cancellation, it's because cancellationToken requested the cancellation. The intent behind
+            // SoftCrashException was since it inherited from OperationCancelled it would make things safer, but in this case
+            // it's violating other invariants in the process which creates other problems.
+            //
+            // https://github.com/dotnet/roslyn/issues/40476 tracks removing SoftCrashException. When it is removed, the
+            // catch here can be removed and simply let the exception propagate; our Progression code is hardened to
+            // handle exceptions and report them gracefully.
+            try
+            {
+                declarations = await DeclarationFinder.FindSourceDeclarationsWithPatternAsync(
+                    project, _searchPattern, SymbolFilter.TypeAndMember, cancellationToken).ConfigureAwait(false);
+            }
+            catch (SoftCrashException ex) when (ex.InnerException != null)
+            {
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw ExceptionUtilities.Unreachable;
+            }
 
-            symbols = symbols.Where(s =>
-                !s.IsConstructor()
-                && !s.IsStaticConstructor() // not constructors, they get matched on type name
-                && !(s is INamespaceSymbol) // not namespaces
-                && s.Locations.Any(loc => loc.IsInSource)); // only source symbols
+            using var _ = ArrayBuilder<ISymbol>.GetInstance(out var results);
 
-            foreach (var symbol in symbols)
+            foreach (var declaration in declarations)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // As an optimization, don't bother getting the container for this symbol if this
-                // isn't a dotted pattern.  Getting the container could cause lots of string 
-                // allocations that we don't if we're never going to check it.
-                var matches = !patternMatcher.IsDottedPattern
-                    ? new PatternMatches(patternMatcher.GetMatches(GetSearchName(symbol)))
-                    : patternMatcher.GetMatches(GetSearchName(symbol), GetContainer(symbol));
+                var symbol = declaration;
 
-                if (matches.IsEmpty)
+                // Ignore constructors and namespaces.  We don't want to expose them through this API.
+                if (symbol.IsConstructor() ||
+                    symbol.IsStaticConstructor() ||
+                    symbol is INamespaceSymbol)
                 {
                     continue;
                 }
 
-                results.Add(symbol);
+                // Ignore symbols that have no source location.  We don't want to expose them through this API.
+                if (!symbol.Locations.Any(loc => loc.IsInSource))
+                {
+                    continue;
+                }
+
+                results.Add(declaration);
 
                 // also report matching constructors (using same match result as type)
-                var namedType = symbol as INamedTypeSymbol;
-                if (namedType != null)
+                if (symbol is INamedTypeSymbol namedType)
                 {
                     foreach (var constructor in namedType.Constructors)
                     {
@@ -159,47 +179,13 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
                 }
 
                 // report both parts of partial methods
-                var method = symbol as IMethodSymbol;
-                if (method != null && method.PartialImplementationPart != null)
+                if (symbol is IMethodSymbol method && method.PartialImplementationPart != null)
                 {
                     results.Add(method);
                 }
             }
 
-            return results.ToImmutableAndFree();
-        }
-
-        public static readonly SymbolDisplayFormat DottedNameFormat =
-            new SymbolDisplayFormat(
-                globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
-                typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
-                delegateStyle: SymbolDisplayDelegateStyle.NameOnly,
-                extensionMethodStyle: SymbolDisplayExtensionMethodStyle.StaticMethod,
-                propertyStyle: SymbolDisplayPropertyStyle.NameOnly);
-
-        private static string GetContainer(ISymbol symbol)
-        {
-            var container = symbol.ContainingSymbol;
-            if (container == null)
-            {
-                return null;
-            }
-
-            return container.ToDisplayString(DottedNameFormat);
-        }
-
-        private static string GetSearchName(ISymbol symbol)
-        {
-            if (symbol.IsConstructor() || symbol.IsStaticConstructor())
-            {
-                return symbol.ContainingType.Name;
-            }
-            else if (symbol.IsIndexer() && symbol.Name == WellKnownMemberNames.Indexer)
-            {
-                return "this";
-            }
-
-            return symbol.Name;
+            return results.ToImmutable();
         }
     }
 }

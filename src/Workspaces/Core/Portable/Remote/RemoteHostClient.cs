@@ -1,119 +1,186 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Pipelines;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.Execution;
 using Roslyn.Utilities;
+using Microsoft.CodeAnalysis.Host;
 
 namespace Microsoft.CodeAnalysis.Remote
 {
     /// <summary>
-    /// This lets users create a session to communicate with remote host (i.e. ServiceHub)
+    /// This represents client in client/server model.
+    /// 
+    /// user can create a connection to communicate with the server (remote host) through this client
     /// </summary>
-    internal abstract class RemoteHostClient
+    internal abstract class RemoteHostClient : IDisposable
     {
-        private readonly Workspace _workspace;
+        public event EventHandler<bool>? StatusChanged;
 
-        protected RemoteHostClient(Workspace workspace)
+        protected void Started()
         {
-            _workspace = workspace;
+            OnStatusChanged(started: true);
         }
 
-        public event EventHandler<bool> ConnectionChanged;
+        public virtual void Dispose()
+            => OnStatusChanged(started: false);
 
-        public Task<Session> CreateServiceSessionAsync(string serviceName, Solution solution, CancellationToken cancellationToken)
+        private void OnStatusChanged(bool started)
+            => StatusChanged?.Invoke(this, started);
+
+        public static Task<RemoteHostClient?> TryGetClientAsync(Project project, CancellationToken cancellationToken)
         {
-            return CreateServiceSessionAsync(serviceName, solution, callbackTarget: null, cancellationToken: cancellationToken);
-        }
-
-        public async Task<Session> CreateServiceSessionAsync(string serviceName, Solution solution, object callbackTarget, CancellationToken cancellationToken)
-        {
-            Contract.ThrowIfFalse(solution.Workspace == _workspace);
-
-            var service = _workspace.Services.GetService<ISolutionSynchronizationService>();
-            var snapshot = await service.CreatePinnedRemotableDataScopeAsync(solution, cancellationToken).ConfigureAwait(false);
-
-            return await CreateServiceSessionAsync(serviceName, snapshot, callbackTarget, cancellationToken).ConfigureAwait(false);
-        }
-
-        protected abstract void OnConnected();
-
-        protected abstract void OnDisconnected();
-
-        protected abstract Task<Session> CreateServiceSessionAsync(string serviceName, PinnedRemotableDataScope snapshot, object callbackTarget, CancellationToken cancellationToken);
-
-        internal void Shutdown()
-        {
-            // this should be only used by RemoteHostService to shutdown this remote host
-            Disconnected();
-        }
-
-        protected void Connected()
-        {
-            OnConnected();
-
-            OnConnectionChanged(true);
-        }
-
-        protected void Disconnected()
-        {
-            OnDisconnected();
-
-            OnConnectionChanged(false);
-        }
-
-        private void OnConnectionChanged(bool connected)
-        {
-            ConnectionChanged?.Invoke(this, connected);
-        }
-
-        // TODO: make this to not exposed to caller. abstract all of these under Request and Response mechanism
-        public abstract class Session : IDisposable
-        {
-            protected readonly PinnedRemotableDataScope PinnedScope;
-            protected readonly CancellationToken CancellationToken;
-
-            private bool _disposed;
-
-            protected Session(PinnedRemotableDataScope scope, CancellationToken cancellationToken)
+            if (!RemoteSupportedLanguages.IsSupported(project.Language))
             {
-                _disposed = false;
-
-                PinnedScope = scope;
-                CancellationToken = cancellationToken;
+                return SpecializedTasks.Null<RemoteHostClient>();
             }
 
-            public abstract Task InvokeAsync(string targetName, params object[] arguments);
-            public abstract Task<T> InvokeAsync<T>(string targetName, params object[] arguments);
-            public abstract Task InvokeAsync(string targetName, IEnumerable<object> arguments, Func<Stream, CancellationToken, Task> funcWithDirectStreamAsync);
-            public abstract Task<T> InvokeAsync<T>(string targetName, IEnumerable<object> arguments, Func<Stream, CancellationToken, Task<T>> funcWithDirectStreamAsync);
+            return TryGetClientAsync(project.Solution.Workspace, cancellationToken);
+        }
 
-            public void AddAdditionalAssets(CustomAsset asset)
+        public static Task<RemoteHostClient?> TryGetClientAsync(Workspace workspace, CancellationToken cancellationToken)
+            => TryGetClientAsync(workspace.Services, cancellationToken);
+
+        public static Task<RemoteHostClient?> TryGetClientAsync(HostWorkspaceServices services, CancellationToken cancellationToken)
+        {
+            var service = services.GetService<IRemoteHostClientProvider>();
+            if (service == null)
             {
-                PinnedScope.AddAdditionalAsset(asset, CancellationToken);
+                return SpecializedTasks.Null<RemoteHostClient>();
             }
 
-            protected virtual void OnDisposed()
-            {
-                // do nothing
-            }
+            return service.TryGetRemoteHostClientAsync(cancellationToken);
+        }
 
-            public void Dispose()
-            {
-                if (_disposed)
-                {
-                    return;
-                }
+        public abstract RemoteServiceConnection<T> CreateConnection<T>(object? callbackTarget)
+            where T : class;
 
-                _disposed = true;
+        public abstract Task<RemoteServiceConnection> CreateConnectionAsync(RemoteServiceName serviceName, object? callbackTarget, CancellationToken cancellationToken);
 
-                OnDisposed();
+        // no solution, no callback:
 
-                PinnedScope.Dispose();
-            }
+        public async ValueTask<bool> TryInvokeAsync<TService>(
+            Func<TService, CancellationToken, ValueTask> invocation,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget: null);
+            return await connection.TryInvokeAsync(invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask<Optional<TResult>> TryInvokeAsync<TService, TResult>(
+            Func<TService, CancellationToken, ValueTask<TResult>> invocation,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget: null);
+            return await connection.TryInvokeAsync(invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        // no solution, callback:
+
+        public async ValueTask<bool> TryInvokeAsync<TService>(
+            Func<TService, RemoteServiceCallbackId, CancellationToken, ValueTask> invocation,
+            object callbackTarget,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget);
+            return await connection.TryInvokeAsync(invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask<Optional<TResult>> TryInvokeAsync<TService, TResult>(
+            Func<TService, RemoteServiceCallbackId, CancellationToken, ValueTask<TResult>> invocation,
+            object callbackTarget,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget);
+            return await connection.TryInvokeAsync(invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        // solution, no callback:
+
+        public async ValueTask<bool> TryInvokeAsync<TService>(
+            Solution solution,
+            Func<TService, PinnedSolutionInfo, CancellationToken, ValueTask> invocation,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget: null);
+            return await connection.TryInvokeAsync(solution, invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask<Optional<TResult>> TryInvokeAsync<TService, TResult>(
+            Solution solution,
+            Func<TService, PinnedSolutionInfo, CancellationToken, ValueTask<TResult>> invocation,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget: null);
+            return await connection.TryInvokeAsync(solution, invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        // solution, callback:
+
+        public async ValueTask<bool> TryInvokeAsync<TService>(
+            Solution solution,
+            Func<TService, PinnedSolutionInfo, RemoteServiceCallbackId, CancellationToken, ValueTask> invocation,
+            object callbackTarget,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget);
+            return await connection.TryInvokeAsync(solution, invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask<Optional<TResult>> TryInvokeAsync<TService, TResult>(
+            Solution solution,
+            Func<TService, PinnedSolutionInfo, RemoteServiceCallbackId, CancellationToken, ValueTask<TResult>> invocation,
+            object callbackTarget,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget);
+            return await connection.TryInvokeAsync(solution, invocation, cancellationToken).ConfigureAwait(false);
+        }
+
+        // streaming
+
+        /// <summary>
+        /// Invokes a remote API that streams data back to the caller via a pipe.
+        /// </summary>
+        public async ValueTask<Optional<TResult>> TryInvokeAsync<TService, TResult>(
+            Solution solution,
+            Func<TService, PinnedSolutionInfo, PipeWriter, CancellationToken, ValueTask> invocation,
+            Func<PipeReader, CancellationToken, ValueTask<TResult>> reader,
+            CancellationToken cancellationToken)
+            where TService : class
+        {
+            using var connection = CreateConnection<TService>(callbackTarget: null);
+            return await connection.TryInvokeAsync(solution, invocation, reader, cancellationToken).ConfigureAwait(false);
+        }
+
+        // legacy services:
+
+        public async Task RunRemoteAsync(RemoteServiceName serviceName, string targetName, Solution? solution, IReadOnlyList<object?> arguments, object? callbackTarget, CancellationToken cancellationToken)
+        {
+            using var connection = await CreateConnectionAsync(serviceName, callbackTarget, cancellationToken).ConfigureAwait(false);
+            await connection.RunRemoteAsync(targetName, solution, arguments, cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task<T> RunRemoteAsync<T>(RemoteServiceName serviceName, string targetName, Solution? solution, IReadOnlyList<object?> arguments, object? callbackTarget, CancellationToken cancellationToken)
+            => RunRemoteAsync<T>(serviceName, targetName, solution, arguments, callbackTarget, dataReader: null, cancellationToken);
+
+        public async Task<T> RunRemoteAsync<T>(RemoteServiceName serviceName, string targetName, Solution? solution, IReadOnlyList<object?> arguments, object? callbackTarget, Func<Stream, CancellationToken, Task<T>>? dataReader, CancellationToken cancellationToken)
+        {
+            using var connection = await CreateConnectionAsync(serviceName, callbackTarget, cancellationToken).ConfigureAwait(false);
+            return await connection.RunRemoteAsync(targetName, solution, arguments, dataReader, cancellationToken).ConfigureAwait(false);
         }
     }
 }

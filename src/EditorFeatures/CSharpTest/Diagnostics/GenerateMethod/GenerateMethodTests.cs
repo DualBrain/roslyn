@@ -1,34 +1,43 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System;
+#nullable disable
+
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CodeFixes;
-using Microsoft.CodeAnalysis.CodeStyle;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.CodeFixes.GenerateMethod;
 using Microsoft.CodeAnalysis.CSharp.CodeStyle;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
+using Roslyn.Utilities;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Diagnostics.GenerateMethod
 {
     public class GenerateMethodTests : AbstractCSharpDiagnosticProviderBasedUserDiagnosticTest
     {
-        internal override Tuple<DiagnosticAnalyzer, CodeFixProvider> CreateDiagnosticProviderAndFixer(Workspace workspace)
+        public GenerateMethodTests(ITestOutputHelper logger)
+             : base(logger)
         {
-            return new Tuple<DiagnosticAnalyzer, CodeFixProvider>(null, new GenerateMethodCodeFixProvider());
         }
+
+        internal override (DiagnosticAnalyzer, CodeFixProvider) CreateDiagnosticProviderAndFixer(Workspace workspace)
+            => (null, new GenerateMethodCodeFixProvider());
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationIntoSameType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]();
+        [|Goo|]();
     }
 }",
 @"using System;
@@ -37,10 +46,64 @@ class Class
 {
     void Method()
     {
-        Foo();
+        Goo();
     }
 
-    private void Foo()
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestOnRightOfNullCoalescingAssignment_NullableBool()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method(bool? b)
+    {
+        b ??= [|Goo|]();
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method(bool? b)
+    {
+        b ??= Goo();
+    }
+
+    private bool? Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestOnRightOfNullCoalescingAssignment_String()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method(string s)
+    {
+        s ??= [|Goo|]();
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method(string s)
+    {
+        s ??= Goo();
+    }
+
+    private string Goo()
     {
         throw new NotImplementedException();
     }
@@ -50,12 +113,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationIntoSameType_CodeStyle1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]();
+        [|Goo|]();
     }
 }",
 @"using System;
@@ -64,19 +127,19 @@ class Class
 {
     void Method()
     {
-        Foo();
+        Goo();
     }
 
-    private void Foo() => throw new NotImplementedException();
+    private void Goo() => throw new NotImplementedException();
 }",
-options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedMethods, CodeStyleOptions.TrueWithNoneEnforcement));
+options: Option(CSharpCodeStyleOptions.PreferExpressionBodiedMethods, CSharpCodeStyleOptions.WhenPossibleWithSilentEnforcement));
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         [WorkItem(11518, "https://github.com/dotnet/roslyn/issues/11518")]
         public async Task NameMatchesNamespaceName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace N
 {
     class Class
@@ -109,12 +172,12 @@ namespace N
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationOffOfThis()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        this.[|Foo|]();
+        this.[|Goo|]();
     }
 }",
 @"using System;
@@ -123,10 +186,10 @@ class Class
 {
     void Method()
     {
-        this.Foo();
+        this.Goo();
     }
 
-    private void Foo()
+    private void Goo()
     {
         throw new NotImplementedException();
     }
@@ -136,12 +199,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationOffOfType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        Class.[|Foo|]();
+        Class.[|Goo|]();
     }
 }",
 @"using System;
@@ -150,10 +213,10 @@ class Class
 {
     void Method()
     {
-        Class.Foo();
+        Class.Goo();
     }
 
-    private static void Foo()
+    private static void Goo()
     {
         throw new NotImplementedException();
     }
@@ -163,12 +226,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationValueExpressionArg()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|](0);
+        [|Goo|](0);
     }
 }",
 @"using System;
@@ -177,10 +240,10 @@ class Class
 {
     void Method()
     {
-        Foo(0);
+        Goo(0);
     }
 
-    private void Foo(int v)
+    private void Goo(int v)
     {
         throw new NotImplementedException();
     }
@@ -190,12 +253,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationMultipleValueExpressionArg()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|](0, 0);
+        [|Goo|](0, 0);
     }
 }",
 @"using System;
@@ -204,10 +267,10 @@ class Class
 {
     void Method()
     {
-        Foo(0, 0);
+        Goo(0, 0);
     }
 
-    private void Foo(int v1, int v2)
+    private void Goo(int v1, int v2)
     {
         throw new NotImplementedException();
     }
@@ -217,12 +280,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationValueArg()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](i);
+        [|Goo|](i);
     }
 }",
 @"using System;
@@ -231,10 +294,150 @@ class Class
 {
     void Method(int i)
     {
-        Foo(i);
+        Goo(i);
     }
 
-    private void Foo(int i)
+    private void Goo(int i)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestSimpleInvocationValueNullableReferenceType()
+        {
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+class Class
+{
+    void Method(string? s)
+    {
+        [|Goo|](s);
+    }
+}",
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method(string? s)
+    {
+        Goo(s);
+    }
+
+    private void Goo(string? s)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestSimpleInvocationUnassignedNullableReferenceType()
+        {
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+class Class
+{
+    void Method()
+    {
+        string? s;
+        [|Goo|](s);
+    }
+}",
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        string? s;
+        Goo(s);
+    }
+
+    private void Goo(string? s)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestSimpleInvocationCrossingNullableAnnotationsEnabled()
+        {
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+class NullableEnable
+{
+    void Method(string? s)
+    {
+        [|NullableDisable.Goo|](s);
+    }
+}
+
+#nullable disable
+
+class NullableDisable
+{
+}",
+@"#nullable enable
+
+using System;
+
+class NullableEnable
+{
+    void Method(string? s)
+    {
+        [|NullableDisable.Goo|](s);
+    }
+}
+
+#nullable disable
+
+class NullableDisable
+{
+    internal static void Goo(string s)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestSimpleInvocationValueNestedNullableReferenceType()
+        {
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+using System.Collections.Generic;
+
+class Class
+{
+    void Method(List<string?> l)
+    {
+        [|Goo|](l);
+    }
+}",
+@"#nullable enable
+
+using System;
+using System.Collections.Generic;
+
+class Class
+{
+    void Method(List<string?> l)
+    {
+        Goo(l);
+    }
+
+    private void Goo(List<string?> l)
     {
         throw new NotImplementedException();
     }
@@ -244,12 +447,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleInvocationNamedValueArg()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](bar: i);
+        [|Goo|](bar: i);
     }
 }",
 @"using System;
@@ -258,10 +461,10 @@ class Class
 {
     void Method(int i)
     {
-        Foo(bar: i);
+        Goo(bar: i);
     }
 
-    private void Foo(int bar)
+    private void Goo(int bar)
     {
         throw new NotImplementedException();
     }
@@ -271,12 +474,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateAfterMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]();
+        [|Goo|]();
     }
 
     void NextMethod()
@@ -289,10 +492,10 @@ class Class
 {
     void Method()
     {
-        Foo();
+        Goo();
     }
 
-    private void Foo()
+    private void Goo()
     {
         throw new NotImplementedException();
     }
@@ -306,15 +509,15 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInterfaceNaming()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](NextMethod());
+        [|Goo|](NextMethod());
     }
 
-    IFoo NextMethod()
+    IGoo NextMethod()
     {
     }
 }",
@@ -324,15 +527,15 @@ class Class
 {
     void Method(int i)
     {
-        Foo(NextMethod());
+        Goo(NextMethod());
     }
 
-    private void Foo(IFoo foo)
+    private void Goo(IGoo goo)
     {
         throw new NotImplementedException();
     }
 
-    IFoo NextMethod()
+    IGoo NextMethod()
     {
     }
 }");
@@ -341,12 +544,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestFuncArg0()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](NextMethod);
+        [|Goo|](NextMethod);
     }
 
     string NextMethod()
@@ -359,10 +562,10 @@ class Class
 {
     void Method(int i)
     {
-        Foo(NextMethod);
+        Goo(NextMethod);
     }
 
-    private void Foo(Func<string> nextMethod)
+    private void Goo(Func<string> nextMethod)
     {
         throw new NotImplementedException();
     }
@@ -376,12 +579,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestFuncArg1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](NextMethod);
+        [|Goo|](NextMethod);
     }
 
     string NextMethod(int i)
@@ -394,10 +597,10 @@ class Class
 {
     void Method(int i)
     {
-        Foo(NextMethod);
+        Goo(NextMethod);
     }
 
-    private void Foo(Func<int, string> nextMethod)
+    private void Goo(Func<int, string> nextMethod)
     {
         throw new NotImplementedException();
     }
@@ -411,12 +614,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestActionArg()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](NextMethod);
+        [|Goo|](NextMethod);
     }
 
     void NextMethod()
@@ -429,10 +632,10 @@ class Class
 {
     void Method(int i)
     {
-        Foo(NextMethod);
+        Goo(NextMethod);
     }
 
-    private void Foo(Action nextMethod)
+    private void Goo(Action nextMethod)
     {
         throw new NotImplementedException();
     }
@@ -446,12 +649,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestActionArg1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
     {
-        [|Foo|](NextMethod);
+        [|Goo|](NextMethod);
     }
 
     void NextMethod(int i)
@@ -464,10 +667,10 @@ class Class
 {
     void Method(int i)
     {
-        Foo(NextMethod);
+        Goo(NextMethod);
     }
 
-    private void Foo(Action<int> nextMethod)
+    private void Goo(Action<int> nextMethod)
     {
         throw new NotImplementedException();
     }
@@ -484,12 +687,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestTypeInference()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        if ([|Foo|]())
+        if ([|Goo|]())
         {
         }
     }
@@ -500,12 +703,12 @@ class Class
 {
     void Method()
     {
-        if (Foo())
+        if (Goo())
         {
         }
     }
 
-    private bool Foo()
+    private bool Goo()
     {
         throw new NotImplementedException();
     }
@@ -516,12 +719,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestOutRefArguments()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|](out a, ref b);
+        [|Goo|](out a, ref b);
     }
 }",
 @"using System;
@@ -530,10 +733,10 @@ class Class
 {
     void Method()
     {
-        Foo(out a, ref b);
+        Goo(out a, ref b);
     }
 
-    private void Foo(out object a, ref object b)
+    private void Goo(out object a, ref object b)
     {
         throw new NotImplementedException();
     }
@@ -543,12 +746,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMemberAccessArgumentName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|](this.Bar);
+        [|Goo|](this.Bar);
     }
 }",
 @"using System;
@@ -557,10 +760,10 @@ class Class
 {
     void Method()
     {
-        Foo(this.Bar);
+        Goo(this.Bar);
     }
 
-    private void Foo(object bar)
+    private void Goo(object bar)
     {
         throw new NotImplementedException();
     }
@@ -571,12 +774,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestParenthesizedArgumentName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]((Bar));
+        [|Goo|]((Bar));
     }
 }",
 @"using System;
@@ -585,10 +788,10 @@ class Class
 {
     void Method()
     {
-        Foo((Bar));
+        Goo((Bar));
     }
 
-    private void Foo(object bar)
+    private void Goo(object bar)
     {
         throw new NotImplementedException();
     }
@@ -599,12 +802,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestCastedArgumentName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]((Bar)this.Baz);
+        [|Goo|]((Bar)this.Baz);
     }
 }",
 @"using System;
@@ -613,10 +816,10 @@ class Class
 {
     void Method()
     {
-        Foo((Bar)this.Baz);
+        Goo((Bar)this.Baz);
     }
 
-    private void Foo(Bar baz)
+    private void Goo(Bar baz)
     {
         throw new NotImplementedException();
     }
@@ -626,12 +829,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestNullableArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
-        [|Foo|]((int?)1);
+        [|Goo|]((int?)1);
     }
 }",
 @"using System;
@@ -640,10 +843,10 @@ class C
 {
     void Method()
     {
-        Foo((int?)1);
+        Goo((int?)1);
     }
 
-    private void Foo(int? v)
+    private void Goo(int? v)
     {
         throw new NotImplementedException();
     }
@@ -653,12 +856,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestNullArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
-        [|Foo|](null);
+        [|Goo|](null);
     }
 }",
 @"using System;
@@ -667,10 +870,10 @@ class C
 {
     void Method()
     {
-        Foo(null);
+        Goo(null);
     }
 
-    private void Foo(object p)
+    private void Goo(object p)
     {
         throw new NotImplementedException();
     }
@@ -680,12 +883,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestTypeofArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
-        [|Foo|](typeof(int));
+        [|Goo|](typeof(int));
     }
 }",
 @"using System;
@@ -694,10 +897,10 @@ class C
 {
     void Method()
     {
-        Foo(typeof(int));
+        Goo(typeof(int));
     }
 
-    private void Foo(Type type)
+    private void Goo(Type type)
     {
         throw new NotImplementedException();
     }
@@ -707,12 +910,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDefaultArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
-        [|Foo|](default(int));
+        [|Goo|](default(int));
     }
 }",
 @"using System;
@@ -721,10 +924,10 @@ class C
 {
     void Method()
     {
-        Foo(default(int));
+        Goo(default(int));
     }
 
-    private void Foo(int v)
+    private void Goo(int v)
     {
         throw new NotImplementedException();
     }
@@ -734,12 +937,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestAsArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
-        [|Foo|](1 as int?);
+        [|Goo|](1 as int?);
     }
 }",
 @"using System;
@@ -748,10 +951,10 @@ class C
 {
     void Method()
     {
-        Foo(1 as int?);
+        Goo(1 as int?);
     }
 
-    private void Foo(int? v)
+    private void Goo(int? v)
     {
         throw new NotImplementedException();
     }
@@ -761,13 +964,13 @@ class C
         [WpfFact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestPointArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
         int* p;
-        [|Foo|](p);
+        [|Goo|](p);
     }
 }",
 @"using System;
@@ -777,10 +980,10 @@ class C
     void Method()
     {
         int* p;
-        Foo(p);
+        Goo(p);
     }
 
-    private unsafe void Foo(int* p)
+    private unsafe void Goo(int* p)
     {
         throw new NotImplementedException();
     }
@@ -790,13 +993,13 @@ class C
         [WpfFact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestArgumentWithPointerName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
         int* p;
-        [|Foo|](p);
+        [|Goo|](p);
     }
 }",
 @"using System;
@@ -806,10 +1009,10 @@ class C
     void Method()
     {
         int* p;
-        Foo(p);
+        Goo(p);
     }
 
-    private unsafe void Foo(int* p)
+    private unsafe void Goo(int* p)
     {
         throw new NotImplementedException();
     }
@@ -819,13 +1022,13 @@ class C
         [WpfFact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestArgumentWithPointTo()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
         int* p;
-        [|Foo|](*p);
+        [|Goo|](*p);
     }
 }",
 @"using System;
@@ -835,10 +1038,10 @@ class C
     void Method()
     {
         int* p;
-        Foo(*p);
+        Goo(*p);
     }
 
-    private void Foo(int v)
+    private void Goo(int v)
     {
         throw new NotImplementedException();
     }
@@ -848,13 +1051,13 @@ class C
         [WpfFact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestArgumentWithAddress()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     unsafe void Method()
     {
         int a = 10;
-        [|Foo|](&a);
+        [|Goo|](&a);
     }
 }",
 @"using System;
@@ -864,10 +1067,10 @@ class C
     unsafe void Method()
     {
         int a = 10;
-        Foo(&a);
+        Goo(&a);
     }
 
-    private unsafe void Foo(int* v)
+    private unsafe void Goo(int* v)
     {
         throw new NotImplementedException();
     }
@@ -877,12 +1080,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateWithPointerReturn()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void Method()
     {
-        int* p = [|Foo|]();
+        int* p = [|Goo|]();
     }
 }",
 @"using System;
@@ -891,10 +1094,10 @@ class C
 {
     void Method()
     {
-        int* p = Foo();
+        int* p = Goo();
     }
 
-    private unsafe int* Foo()
+    private unsafe int* Goo()
     {
         throw new NotImplementedException();
     }
@@ -905,12 +1108,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDuplicateNames()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]((Bar)this.Baz, this.Baz);
+        [|Goo|]((Bar)this.Baz, this.Baz);
     }
 }",
 @"using System;
@@ -919,10 +1122,10 @@ class Class
 {
     void Method()
     {
-        Foo((Bar)this.Baz, this.Baz);
+        Goo((Bar)this.Baz, this.Baz);
     }
 
-    private void Foo(Bar baz1, object baz2)
+    private void Goo(Bar baz1, object baz2)
     {
         throw new NotImplementedException();
     }
@@ -933,12 +1136,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDuplicateNamesWithNamedArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|]((Bar)this.Baz, this.Baz, baz: this.Baz);
+        [|Goo|]((Bar)this.Baz, this.Baz, baz: this.Baz);
     }
 }",
 @"using System;
@@ -947,10 +1150,10 @@ class Class
 {
     void Method()
     {
-        Foo((Bar)this.Baz, this.Baz, baz: this.Baz);
+        Goo((Bar)this.Baz, this.Baz, baz: this.Baz);
     }
 
-    private void Foo(Bar baz1, object baz2, object baz)
+    private void Goo(Bar baz1, object baz2, object baz)
     {
         throw new NotImplementedException();
     }
@@ -963,14 +1166,14 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimpleDelegate()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method()
     {
-        Func<int, string, bool> f = [|Foo|];
+        Func<int, string, bool> f = [|Goo|];
     }
 }",
 @"using System;
@@ -979,10 +1182,117 @@ class Class
 {
     void Method()
     {
-        Func<int, string, bool> f = Foo;
+        Func<int, string, bool> f = Goo;
     }
 
-    private bool Foo(int arg1, string arg2)
+    private bool Goo(int arg1, string arg2)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestSimpleAssignmentWithNullableReferenceType()
+        {
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        string? f = [|Goo|]();
+    }
+}",
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        string? f = [|Goo|]();
+    }
+
+    private string? Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenericAssignmentWithTopLevelNullableReferenceTypeBeingAssignedTo()
+        {
+            // Here we assert that if the type argument was string, but the return value was string?, we still
+            // make the return value T, and assume the user just wanted to assign it to a nullable value because they
+            // might be assigning null later in the caller.
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        string? f = [|Goo|]<string>(""s"");
+    }
+}",
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        string? f = [|Goo|]<string>(""s"");
+    }
+
+    private T Goo<T>(T v)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenericAssignmentWithNestedNullableReferenceTypeBeingAssignedTo()
+        {
+            // Here, we are asserting that the return type of the generated method is T, effectively discarding
+            // the difference of nested nullability. Since there's no way to generate a method any other way,
+            // we're assuming this is betetr than inferring that the return type is explicitly IEnumerable<string>
+            await TestInRegularAndScriptAsync(
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        IEnumerable<string> e;
+        IEnumerable<string?> f = [|Goo|]<IEnumerable<string>>(e);
+    }
+}",
+@"#nullable enable
+
+using System;
+
+class Class
+{
+    void Method()
+    {
+        IEnumerable<string> e;
+        IEnumerable<string?> f = [|Goo|]<IEnumerable<string>>(e);
+    }
+
+    private T Goo<T>(T e)
     {
         throw new NotImplementedException();
     }
@@ -992,23 +1302,23 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDelegateWithRefParameter()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        Foo f = [|Bar|];
+        Goo f = [|Bar|];
     }
 }
 
-delegate void Foo(ref int i);",
+delegate void Goo(ref int i);",
 @"using System;
 
 class Class
 {
     void Method()
     {
-        Foo f = Bar;
+        Goo f = Bar;
     }
 
     private void Bar(ref int i)
@@ -1017,7 +1327,7 @@ class Class
     }
 }
 
-delegate void Foo(ref int i);");
+delegate void Goo(ref int i);");
         }
 
         // TODO(cyrusn): Add delegate tests that cover delegates with interesting signatures (i.e.
@@ -1028,14 +1338,14 @@ delegate void Foo(ref int i);");
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenericArgs1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method()
     {
-        [|Foo<int>|]();
+        [|Goo<int>|]();
     }
 }",
 @"using System;
@@ -1044,10 +1354,10 @@ class Class
 {
     void Method()
     {
-        Foo<int>();
+        Goo<int>();
     }
 
-    private void Foo<T>()
+    private void Goo<T>()
     {
         throw new NotImplementedException();
     }
@@ -1057,14 +1367,14 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenericArgs2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method()
     {
-        [|Foo<int, string>|]();
+        [|Goo<int, string>|]();
     }
 }",
 @"using System;
@@ -1073,10 +1383,10 @@ class Class
 {
     void Method()
     {
-        Foo<int, string>();
+        Goo<int, string>();
     }
 
-    private void Foo<T1, T2>()
+    private void Goo<T1, T2>()
     {
         throw new NotImplementedException();
     }
@@ -1086,14 +1396,14 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenericArgsFromMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method<X, Y>(X x, Y y)
     {
-        [|Foo|](x);
+        [|Goo|](x);
     }
 }",
 @"using System;
@@ -1102,10 +1412,10 @@ class Class
 {
     void Method<X, Y>(X x, Y y)
     {
-        Foo(x);
+        Goo(x);
     }
 
-    private void Foo<X>(X x)
+    private void Goo<X>(X x)
     {
         throw new NotImplementedException();
     }
@@ -1115,14 +1425,14 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMultipleGenericArgsFromMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method<X, Y>(X x, Y y)
     {
-        [|Foo|](x, y);
+        [|Goo|](x, y);
     }
 }",
 @"using System;
@@ -1131,10 +1441,10 @@ class Class
 {
     void Method<X, Y>(X x, Y y)
     {
-        Foo(x, y);
+        Goo(x, y);
     }
 
-    private void Foo<X, Y>(X x, Y y)
+    private void Goo<X, Y>(X x, Y y)
     {
         throw new NotImplementedException();
     }
@@ -1144,14 +1454,14 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMultipleGenericArgsFromMethod2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method<X, Y>(Func<X> x, Y[] y)
     {
-        [|Foo|](y, x);
+        [|Goo|](y, x);
     }
 }",
 @"using System;
@@ -1160,10 +1470,10 @@ class Class
 {
     void Method<X, Y>(Func<X> x, Y[] y)
     {
-        Foo(y, x);
+        Goo(y, x);
     }
 
-    private void Foo<Y, X>(Y[] y, Func<X> x)
+    private void Goo<Y, X>(Y[] y, Func<X> x)
     {
         throw new NotImplementedException();
     }
@@ -1173,12 +1483,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenericArgThatIsTypeParameter()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Program
 {
     void Main<T>(T t)
     {
-        [|Foo<T>|](t);
+        [|Goo<T>|](t);
     }
 }",
 @"using System;
@@ -1187,10 +1497,10 @@ class Program
 {
     void Main<T>(T t)
     {
-        Foo<T>(t);
+        Goo<T>(t);
     }
 
-    private void Foo<T>(T t)
+    private void Goo<T>(T t)
     {
         throw new NotImplementedException();
     }
@@ -1200,12 +1510,12 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMultipleGenericArgsThatAreTypeParameters()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Program
 {
     void Main<T, U>(T t, U u)
     {
-        [|Foo<T, U>|](t, u);
+        [|Goo<T, U>|](t, u);
     }
 }",
 @"using System;
@@ -1214,10 +1524,10 @@ class Program
 {
     void Main<T, U>(T t, U u)
     {
-        Foo<T, U>(t, u);
+        Goo<T, U>(t, u);
     }
 
-    private void Foo<T, U>(T t, U u)
+    private void Goo<T, U>(T t, U u)
     {
         throw new NotImplementedException();
     }
@@ -1227,14 +1537,14 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoOuterThroughInstance()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Outer
 {
     class Class
     {
         void Method(Outer o)
         {
-            o.[|Foo|]();
+            o.[|Goo|]();
         }
     }
 }",
@@ -1246,11 +1556,11 @@ class Outer
     {
         void Method(Outer o)
         {
-            o.Foo();
+            o.Goo();
         }
     }
 
-    private void Foo()
+    private void Goo()
     {
         throw new NotImplementedException();
     }
@@ -1260,14 +1570,14 @@ class Outer
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoOuterThroughClass()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Outer
 {
     class Class
     {
         void Method(Outer o)
         {
-            Outer.[|Foo|]();
+            Outer.[|Goo|]();
         }
     }
 }",
@@ -1279,11 +1589,11 @@ class Outer
     {
         void Method(Outer o)
         {
-            Outer.Foo();
+            Outer.Goo();
         }
     }
 
-    private static void Foo()
+    private static void Goo()
     {
         throw new NotImplementedException();
     }
@@ -1293,12 +1603,12 @@ class Outer
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoSiblingThroughInstance()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(Sibling s)
     {
-        s.[|Foo|]();
+        s.[|Goo|]();
     }
 }
 
@@ -1311,13 +1621,13 @@ class Class
 {
     void Method(Sibling s)
     {
-        s.Foo();
+        s.Goo();
     }
 }
 
 class Sibling
 {
-    internal void Foo()
+    internal void Goo()
     {
         throw new NotImplementedException();
     }
@@ -1327,12 +1637,12 @@ class Sibling
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoSiblingThroughClass()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(Sibling s)
     {
-        Sibling.[|Foo|]();
+        Sibling.[|Goo|]();
     }
 }
 
@@ -1345,13 +1655,13 @@ class Class
 {
     void Method(Sibling s)
     {
-        Sibling.Foo();
+        Sibling.Goo();
     }
 }
 
 class Sibling
 {
-    internal static void Foo()
+    internal static void Goo()
     {
         throw new NotImplementedException();
     }
@@ -1361,12 +1671,12 @@ class Sibling
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoInterfaceThroughInstance()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(ISibling s)
     {
-        s.[|Foo|]();
+        s.[|Goo|]();
     }
 }
 
@@ -1377,27 +1687,27 @@ interface ISibling
 {
     void Method(ISibling s)
     {
-        s.Foo();
+        s.Goo();
     }
 }
 
 interface ISibling
 {
-    void Foo();
+    void Goo();
 }");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoInterfaceThroughInstanceWithDelegate()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Class
 {
     void Method(ISibling s)
     {
-        Func<int, string> f = s.[|Foo|];
+        Func<int, string> f = s.[|Goo|];
     }
 }
 
@@ -1410,35 +1720,36 @@ class Class
 {
     void Method(ISibling s)
     {
-        Func<int, string> f = s.Foo;
+        Func<int, string> f = s.Goo;
     }
 }
 
 interface ISibling
 {
-    string Foo(int arg);
+    string Goo(int arg);
 }");
         }
 
+        [WorkItem(29584, "https://github.com/dotnet/roslyn/issues/29584")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateAbstractIntoSameType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"abstract class Class
 {
     void Method()
     {
-        [|Foo|]();
+        [|Goo|]();
     }
 }",
 @"abstract class Class
 {
     void Method()
     {
-        Foo();
+        Goo();
     }
 
-    internal abstract void Foo();
+    protected abstract void Goo();
 }",
 index: 1);
         }
@@ -1447,12 +1758,12 @@ index: 1);
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMethodReturningDynamic()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        dynamic d = [|Foo|]();
+        dynamic d = [|Goo|]();
     }
 }",
 @"using System;
@@ -1461,10 +1772,10 @@ class Class
 {
     void Method()
     {
-        dynamic d = Foo();
+        dynamic d = Goo();
     }
 
-    private dynamic Foo()
+    private dynamic Goo()
     {
         throw new NotImplementedException();
     }
@@ -1475,12 +1786,12 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMethodTakingDynamicArg()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(dynamic d)
     {
-        [|Foo|](d);
+        [|Goo|](d);
     }
 }",
 @"using System;
@@ -1489,10 +1800,10 @@ class Class
 {
     void Method(dynamic d)
     {
-        Foo(d);
+        Goo(d);
     }
 
-    private void Foo(dynamic d)
+    private void Goo(dynamic d)
     {
         throw new NotImplementedException();
     }
@@ -1503,7 +1814,7 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestNegativeWithNamedOptionalArg1()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"namespace SyntaxError
 {
     class C1
@@ -1527,7 +1838,7 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestWithNamedOptionalArg2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace SyntaxError
 {
     class C1
@@ -1574,21 +1885,21 @@ namespace SyntaxError
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestArgOrderInNamedArgs()
         {
-            await TestAsync(
-@"class Foo
+            await TestInRegularAndScriptAsync(
+@"class Goo
 {
     static void Test()
     {
-        (new Foo()).[|Method|](3, 4, n1: 5, n3: 6, n2: 7, n0: 8);
+        (new Goo()).[|Method|](3, 4, n1: 5, n3: 6, n2: 7, n0: 8);
     }
 }",
 @"using System;
 
-class Foo
+class Goo
 {
     static void Test()
     {
-        (new Foo()).Method(3, 4, n1: 5, n3: 6, n2: 7, n0: 8);
+        (new Goo()).Method(3, 4, n1: 5, n3: 6, n2: 7, n0: 8);
     }
 
     private void Method(int v1, int v2, int n1, int n3, int n2, int n0)
@@ -1601,12 +1912,12 @@ class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestForMissingOptionalArg()
         {
-            await TestMissingAsync(
-@"class Foo
+            await TestMissingInRegularAndScriptAsync(
+@"class Goo
 {
     static void Test()
     {
-        (new Foo()).[|Method|](s: ""hello"", b: true);
+        (new Goo()).[|Method|](s: ""hello"", b: true);
     }
 
     private void Method(double n = 3.14, string s, bool b)
@@ -1618,25 +1929,25 @@ class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestNamingOfArgWithClashes()
         {
-            await TestAsync(
-@"class Foo
+            await TestInRegularAndScriptAsync(
+@"class Goo
 {
     static int i = 32;
 
     static void Test()
     {
-        (new Foo()).[|Method|](s: ""hello"", i: 52);
+        (new Goo()).[|Method|](s: ""hello"", i: 52);
     }
 }",
 @"using System;
 
-class Foo
+class Goo
 {
     static int i = 32;
 
     static void Test()
     {
-        (new Foo()).Method(s: ""hello"", i: 52);
+        (new Goo()).Method(s: ""hello"", i: 52);
     }
 
     private void Method(string s, int i)
@@ -1669,7 +1980,7 @@ count: 1);
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationOffOfBase()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C3A
 {
 }
@@ -1703,7 +2014,7 @@ class C3 : C3A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationWithinCtor()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C1
 {
     C1()
@@ -1730,7 +2041,7 @@ class C1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationWithinBaseCtor()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C1
 {
     C1()
@@ -1758,7 +2069,7 @@ class C1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestForMultipleSmartTagsInvokingWithinCtor()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class C1
@@ -1778,7 +2089,7 @@ class C1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationWithinDestructor()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C1
 {
     ~C1()
@@ -1805,7 +2116,7 @@ class C1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationWithinConditional()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C4
 {
     void A()
@@ -1838,16 +2149,16 @@ class C4
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoStaticClass()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Bar
 {
     void Test()
     {
-        Foo.[|M|]();
+        Goo.[|M|]();
     }
 }
 
-static class Foo
+static class Goo
 {
 }",
 @"using System;
@@ -1856,11 +2167,11 @@ class Bar
 {
     void Test()
     {
-        Foo.M();
+        Goo.M();
     }
 }
 
-static class Foo
+static class Goo
 {
     internal static void M()
     {
@@ -1872,16 +2183,16 @@ static class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoAbstractClass()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Bar
 {
     void Test()
     {
-        Foo.[|M|]();
+        Goo.[|M|]();
     }
 }
 
-abstract class Foo
+abstract class Goo
 {
 }",
 @"using System;
@@ -1890,11 +2201,11 @@ class Bar
 {
     void Test()
     {
-        Foo.M();
+        Goo.M();
     }
 }
 
-abstract class Foo
+abstract class Goo
 {
     internal static void M()
     {
@@ -1906,29 +2217,29 @@ abstract class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoAbstractClassThoughInstance1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
-    void Test(Foo f)
+    void Test(Goo f)
     {
         f.[|M|]();
     }
 }
 
-abstract class Foo
+abstract class Goo
 {
 }",
 @"using System;
 
 class C
 {
-    void Test(Foo f)
+    void Test(Goo f)
     {
         f.M();
     }
 }
 
-abstract class Foo
+abstract class Goo
 {
     internal void M()
     {
@@ -1940,27 +2251,27 @@ abstract class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoAbstractClassThoughInstance2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
-    void Test(Foo f)
+    void Test(Goo f)
     {
         f.[|M|]();
     }
 }
 
-abstract class Foo
+abstract class Goo
 {
 }",
 @"class C
 {
-    void Test(Foo f)
+    void Test(Goo f)
     {
         f.M();
     }
 }
 
-abstract class Foo
+abstract class Goo
 {
     internal abstract void M();
 }",
@@ -1970,20 +2281,20 @@ index: 1);
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoPartialClass1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Bar
 {
     void Test()
     {
-        Foo.[|M|]();
+        Goo.[|M|]();
     }
 }
 
-partial class Foo
+partial class Goo
 {
 }
 
-partial class Foo
+partial class Goo
 {
 }",
 @"using System;
@@ -1992,11 +2303,11 @@ class Bar
 {
     void Test()
     {
-        Foo.M();
+        Goo.M();
     }
 }
 
-partial class Foo
+partial class Goo
 {
     internal static void M()
     {
@@ -2004,7 +2315,7 @@ partial class Foo
     }
 }
 
-partial class Foo
+partial class Goo
 {
 }");
         }
@@ -2012,25 +2323,25 @@ partial class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoPartialClass2()
         {
-            await TestAsync(
-@"partial class Foo
+            await TestInRegularAndScriptAsync(
+@"partial class Goo
 {
     void Test()
     {
-        Foo.[|M|]();
+        Goo.[|M|]();
     }
 }
 
-partial class Foo
+partial class Goo
 {
 }",
 @"using System;
 
-partial class Foo
+partial class Goo
 {
     void Test()
     {
-        Foo.M();
+        Goo.M();
     }
 
     private static void M()
@@ -2039,7 +2350,7 @@ partial class Foo
     }
 }
 
-partial class Foo
+partial class Goo
 {
 }");
         }
@@ -2047,8 +2358,8 @@ partial class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoStruct()
         {
-            await TestAsync(
-@"class Foo
+            await TestInRegularAndScriptAsync(
+@"class Goo
 {
     void Test()
     {
@@ -2061,7 +2372,7 @@ struct S
 }",
 @"using System;
 
-class Foo
+class Goo
 {
     void Test()
     {
@@ -2082,17 +2393,17 @@ struct S
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationOffOfIndexer()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Bar
 {
-    Foo f = new Foo();
+    Goo f = new Goo();
 
     void Test()
     {
         this[1].[|M|]();
     }
 
-    Foo this[int i]
+    Goo this[int i]
     {
         get
         {
@@ -2106,21 +2417,21 @@ struct S
     }
 }
 
-class Foo
+class Goo
 {
 }",
 @"using System;
 
 class Bar
 {
-    Foo f = new Foo();
+    Goo f = new Goo();
 
     void Test()
     {
         this[1].M();
     }
 
-    Foo this[int i]
+    Goo this[int i]
     {
         get
         {
@@ -2134,7 +2445,7 @@ class Bar
     }
 }
 
-class Foo
+class Goo
 {
     internal void M()
     {
@@ -2147,7 +2458,7 @@ class Foo
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationWithinForEach()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C8
 {
     C8A[] items = {
@@ -2210,10 +2521,154 @@ class C8A
 }");
         }
 
+        [WorkItem(48064, "https://github.com/dotnet/roslyn/issues/48064")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestInvocationWithinSynchronousForEach()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    void M(ISomeInterface _someInterface)
+    {
+         foreach (var item in _someInterface.[|GetItems|]())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+}",
+@"using System.Collections.Generic;
+
+class C
+{
+    void M(ISomeInterface _someInterface)
+    {
+         foreach (var item in _someInterface.GetItems())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+    IEnumerable<object> GetItems();
+}");
+        }
+
+        [WorkItem(48064, "https://github.com/dotnet/roslyn/issues/48064")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestInvocationWithinAsynchronousForEach_IAsyncEnumerableDoesNotExist_FallbackToIEnumerable()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    async void M(ISomeInterface _someInterface)
+    {
+         await foreach (var item in _someInterface.[|GetItems|]())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+}",
+@"using System.Collections.Generic;
+
+class C
+{
+    async void M(ISomeInterface _someInterface)
+    {
+         await foreach (var item in _someInterface.GetItems())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+    IEnumerable<object> GetItems();
+}");
+        }
+
+        [WorkItem(48064, "https://github.com/dotnet/roslyn/issues/48064")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestInvocationWithinAsynchronousForEach_IAsyncEnumerableExists_UseIAsyncEnumerable()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    async void M(ISomeInterface _someInterface)
+    {
+         await foreach (var item in _someInterface.[|GetItems|]())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+}
+" + IAsyncEnumerable,
+@"class C
+{
+    async void M(ISomeInterface _someInterface)
+    {
+         await foreach (var item in _someInterface.GetItems())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+    System.Collections.Generic.IAsyncEnumerable<object> GetItems();
+}
+" + IAsyncEnumerable);
+        }
+
+        [WorkItem(48064, "https://github.com/dotnet/roslyn/issues/48064")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestInvocationWithinAsynchronousForEach_IAsyncEnumerableExists_UseIAsyncEnumerableOfString()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    async void M(ISomeInterface _someInterface)
+    {
+         await foreach (string item in _someInterface.[|GetItems|]())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+}
+" + IAsyncEnumerable,
+@"class C
+{
+    async void M(ISomeInterface _someInterface)
+    {
+         await foreach (string item in _someInterface.GetItems())
+         {
+         }
+    }
+}
+
+interface ISomeInterface
+{
+    System.Collections.Generic.IAsyncEnumerable<string> GetItems();
+}
+" + IAsyncEnumerable);
+        }
+
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationOffOfAnotherMethodCall()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C9
 {
     C9A m_item = new C9A();
@@ -2261,7 +2716,7 @@ struct C9A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationIntoNestedNamespaces()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace NS11X
 {
     namespace NS11Y
@@ -2319,7 +2774,7 @@ namespace NS11A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationIntoAliasedNamespaces()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace NS11X
 {
     using NS = NS11A.NS11B;
@@ -2374,7 +2829,7 @@ namespace NS11A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInvocationOnGlobalNamespace()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace NS13X
 {
     namespace NS13A
@@ -2447,7 +2902,7 @@ namespace NS13A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoAppropriatePart()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public partial class C
 {
 }
@@ -2483,7 +2938,7 @@ public partial class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateWithVoidArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void VoidMethod()
@@ -2517,16 +2972,16 @@ class C
 
         [WorkItem(538993, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538993")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestGenerateInLambda()
+        public async Task TestGenerateInSimpleLambda()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Program
 {
     static void Main(string[] args)
     {
-        Func<int, int> f = x => [|Foo|](x);
+        Func<string, int> f = x => [|Goo|](x);
     }
 }",
 @"using System;
@@ -2535,10 +2990,10 @@ class Program
 {
     static void Main(string[] args)
     {
-        Func<int, int> f = x => Foo(x);
+        Func<string, int> f = x => Goo(x);
     }
 
-    private static int Foo(int x)
+    private static int Goo(string x)
     {
         throw new NotImplementedException();
     }
@@ -2546,15 +3001,234 @@ class Program
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestGenerateInAnonymousMethod()
+        public async Task TestGenerateInParenthesizedLambda()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<int> f = () => [|Goo|]();
+    }
+}",
+@"using System;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<int> f = () => Goo();
+    }
+
+    private static int Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(30232, "https://github.com/dotnet/roslyn/issues/30232")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAsyncTaskOfTSimpleLambda()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<string, Task<int>> f = async x => [|Goo|](x);
+    }
+}",
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<string, Task<int>> f = async x => Goo(x);
+    }
+
+    private static int Goo(string x)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(30232, "https://github.com/dotnet/roslyn/issues/30232")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAsyncTaskOfTParenthesizedLambda()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<Task<int>> f = async () => [|Goo|]();
+    }
+}",
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<Task<int>> f = async () => Goo();
+    }
+
+    private static int Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(30232, "https://github.com/dotnet/roslyn/issues/30232")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAsyncTaskSimpleLambda()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<string, Task> f = async x => [|Goo|](x);
+    }
+}",
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<string, Task> f = async x => Goo(x);
+    }
+
+    private static void Goo(string x)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(30232, "https://github.com/dotnet/roslyn/issues/30232")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAsyncTaskParenthesizedLambda()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<Task> f = async () => [|Goo|]();
+    }
+}",
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Func<Task> f = async () => Goo();
+    }
+
+    private static void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAsyncVoidSimpleLambda()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Action<string> f = async x => [|Goo|](x);
+    }
+}",
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Action<string> f = async x => Goo(x);
+    }
+
+    private static void Goo(string x)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAsyncVoidParenthesizedLambda()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Action f = async () => [|Goo|]();
+    }
+}",
+@"using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Action f = async () => Goo();
+    }
+
+    private static void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateInAssignmentInAnonymousMethod()
+        {
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
     {
         System.Action<int> v = delegate (int x) {
-            x = [|Foo|](x);
+            x = [|Goo|](x);
         };
     }
 }",
@@ -2565,11 +3239,11 @@ class C
     void M()
     {
         System.Action<int> v = delegate (int x) {
-            x = Foo(x);
+            x = Goo(x);
         };
     }
 
-    private int Foo(int x)
+    private int Goo(int x)
     {
         throw new NotImplementedException();
     }
@@ -2580,25 +3254,25 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class A : I
 {
-    [|void I.Foo()
+    [|void I.Goo()
     {
     }|]
 }",
 @"interface I
 {
-    void Foo();
+    void Goo();
 }
 
 class A : I
 {
-    void I.Foo()
+    void I.Goo()
     {
     }
 }");
@@ -2608,25 +3282,25 @@ class A : I
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class A : I
 {
-    [|int I.Foo()
+    [|int I.Goo()
     {
     }|]
 }",
 @"interface I
 {
-    int Foo();
+    int Goo();
 }
 
 class A : I
 {
-    int I.Foo()
+    int I.Goo()
     {
     }
 }");
@@ -2636,25 +3310,25 @@ class A : I
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class A : I
 {
-    [|void I.Foo(int i)
+    [|void I.Goo(int i)
     {
     }|]
 }",
 @"interface I
 {
-    void Foo(int i);
+    void Goo(int i);
 }
 
 class A : I
 {
-    void I.Foo(int i)
+    void I.Goo(int i)
     {
     }
 }");
@@ -2664,73 +3338,71 @@ class A : I
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface4()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class A : I
 {
-    void I.[|Foo|]<T>()
+    void I.[|Goo|]<T>()
     {
     }
 }",
 @"interface I
 {
-    void Foo<T>();
+    void Goo<T>();
 }
 
 class A : I
 {
-    void I.Foo<T>()
+    void I.Goo<T>()
     {
     }
-}",
-index: 0);
+}");
         }
 
         [WorkItem(539024, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539024")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface5()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class A : I
 {
-    void I.[|Foo|]<in T>()
+    void I.[|Goo|]<in T>()
     {
     }
 }",
 @"interface I
 {
-    void Foo<T>();
+    void Goo<T>();
 }
 
 class A : I
 {
-    void I.Foo<in T>()
+    void I.Goo<in T>()
     {
     }
-}",
-index: 0);
+}");
         }
 
         [WorkItem(539024, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539024")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface6()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"interface I
 {
-    void Foo();
+    void Goo();
 }
 
 class A : I
 {
-    void I.[|Foo|]()
+    void I.[|Goo|]()
     {
     }
 }");
@@ -2740,14 +3412,14 @@ class A : I
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface7()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class A
 {
-    void I.[|Foo|]()
+    void I.[|Goo|]()
     {
     }
 }");
@@ -2757,25 +3429,25 @@ class A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface8()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I<T>
 {
 }
 
 class A : I<int>
 {
-    void I<int>.[|Foo|]()
+    void I<int>.[|Goo|]()
     {
     }
 }",
 @"interface I<T>
 {
-    void Foo();
+    void Goo();
 }
 
 class A : I<int>
 {
-    void I<int>.Foo()
+    void I<int>.Goo()
     {
     }
 }");
@@ -2785,26 +3457,26 @@ class A : I<int>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOffOfExplicitInterface9()
         {
-            // TODO(cyrusn): It might be nice if we generated "Foo(T i)" here in the future.
-            await TestAsync(
+            // TODO(cyrusn): It might be nice if we generated "Goo(T i)" here in the future.
+            await TestInRegularAndScriptAsync(
 @"interface I<T>
 {
 }
 
 class A : I<int>
 {
-    void I<int>.[|Foo|](int i)
+    void I<int>.[|Goo|](int i)
     {
     }
 }",
 @"interface I<T>
 {
-    void Foo(int i);
+    void Goo(int i);
 }
 
 class A : I<int>
 {
-    void I<int>.Foo(int i)
+    void I<int>.Goo(int i)
     {
     }
 }");
@@ -2814,7 +3486,7 @@ class A : I<int>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithArgumentFromBaseConstructorsArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class A
 {
     public A(string s)
@@ -2854,7 +3526,7 @@ class B : A
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithArgumentFromGenericConstructorsArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class A<T>
 {
     public A(T t)
@@ -2893,28 +3565,26 @@ class B : A<int>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithVar()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
     {
         var v = 10;
-        v = [|Foo|](v);
+        v = [|Goo|](v);
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     void M()
     {
         var v = 10;
-        v = Foo(v);
+        v = Goo(v);
     }
 
-    private int Foo(int v)
+    private int Goo(int v)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -2923,12 +3593,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestEscapedName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|@Foo|]();
+        [|@Goo|]();
     }
 }",
 @"using System;
@@ -2937,10 +3607,10 @@ class Class
 {
     void Method()
     {
-        @Foo();
+        @Goo();
     }
 
-    private void Foo()
+    private void Goo()
     {
         throw new NotImplementedException();
     }
@@ -2951,7 +3621,7 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestEscapedKeyword()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -2979,7 +3649,7 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class<A>
 {
     void Method(A a)
@@ -3014,7 +3684,7 @@ class B
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class<A>
 {
     void Method(A a)
@@ -3042,7 +3712,7 @@ class Class<A>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class<A>
 {
     class Internal
@@ -3076,7 +3746,7 @@ class Class<A>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter4()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class<A>
 {
     class Internal
@@ -3110,7 +3780,7 @@ class Class<A>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter5()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class<A>
 {
     class Internal
@@ -3144,12 +3814,12 @@ class Class<A>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter6()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Test
 {
     void F<U, V>(U u1, V v1)
     {
-        [|Foo<int, string>|](u1, v1);
+        [|Goo<int, string>|](u1, v1);
     }
 }",
 @"using System;
@@ -3158,10 +3828,10 @@ class Test
 {
     void F<U, V>(U u1, V v1)
     {
-        Foo<int, string>(u1, v1);
+        Goo<int, string>(u1, v1);
     }
 
-    private void Foo<T1, T2>(object u1, object v1)
+    private void Goo<T1, T2>(object u1, object v1)
     {
         throw new NotImplementedException();
     }
@@ -3172,12 +3842,12 @@ class Test
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter7()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class H<T>
 {
     void A(T t1)
     {
-        t1 = [|Foo<T>|](t1);
+        t1 = [|Goo<T>|](t1);
     }
 }",
 @"using System;
@@ -3186,10 +3856,10 @@ class H<T>
 {
     void A(T t1)
     {
-        t1 = Foo<T>(t1);
+        t1 = Goo<T>(t1);
     }
 
-    private T1 Foo<T1>(T1 t1)
+    private T1 Goo<T1>(T1 t1)
     {
         throw new NotImplementedException();
     }
@@ -3200,12 +3870,12 @@ class H<T>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestUnmentionableTypeParameter8()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class H<T1, T2>
 {
     void A(T1 t1)
     {
-        t1 = [|Foo<int, string>|](t1);
+        t1 = [|Goo<int, string>|](t1);
     }
 }",
 @"using System;
@@ -3214,10 +3884,10 @@ class H<T1, T2>
 {
     void A(T1 t1)
     {
-        t1 = Foo<int, string>(t1);
+        t1 = Goo<int, string>(t1);
     }
 
-    private T1 Foo<T3, T4>(T1 t1)
+    private T1 Goo<T3, T4>(T1 t1)
     {
         throw new NotImplementedException();
     }
@@ -3228,7 +3898,7 @@ class H<T1, T2>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestOddErrorType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void M()
@@ -3256,7 +3926,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenericOverloads()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public C()
@@ -3311,16 +3981,16 @@ class CA
 
 static void Main(string[] args)
 {
-    [|Foo|]();
+    [|Goo|]();
 }",
 @"using System;
 
 static void Main(string[] args)
 {
-    Foo();
+    Goo();
 }
 
-void Foo()
+void Goo()
 {
     throw new NotImplementedException();
 }",
@@ -3330,21 +4000,21 @@ parseOptions: GetScriptOptions());
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInTopLevelImplicitClass1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 static void Main(string[] args)
 {
-    [|Foo|]();
+    [|Goo|]();
 }",
 @"using System;
 
 static void Main(string[] args)
 {
-    Foo();
+    Goo();
 }
 
-void Foo()
+void Goo()
 {
     throw new NotImplementedException();
 }");
@@ -3353,14 +4023,14 @@ void Foo()
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInNamespaceImplicitClass1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace N
 {
     using System;
 
     static void Main(string[] args)
     {
-        [|Foo|]();
+        [|Goo|]();
     }
 }",
 @"namespace N
@@ -3369,10 +4039,10 @@ void Foo()
 
     static void Main(string[] args)
     {
-        Foo();
+        Goo();
     }
 
-    void Foo()
+    void Goo()
     {
         throw new NotImplementedException();
     }
@@ -3383,20 +4053,20 @@ void Foo()
         [Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInNamespaceImplicitClass_FieldInitializer()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace N
 {
     using System;
 
-    int f = [|Foo|]();
+    int f = [|Goo|]();
 }",
 @"namespace N
 {
     using System;
 
-    int f = Foo();
+    int f = Goo();
 
-    int Foo()
+    int Goo()
     {
         throw new NotImplementedException();
     }
@@ -3407,7 +4077,7 @@ void Foo()
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimplification1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Program
@@ -3417,7 +4087,7 @@ class Program
         [|Bar|]();
     }
 
-    private static void Foo()
+    private static void Goo()
     {
         throw new System.NotImplementedException();
     }
@@ -3436,7 +4106,7 @@ class Program
         throw new NotImplementedException();
     }
 
-    private static void Foo()
+    private static void Goo()
     {
         throw new System.NotImplementedException();
     }
@@ -3447,7 +4117,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestSimplification2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Program
@@ -3477,17 +4147,17 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestClashesWithMethod1()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class Program
 {
     void Main()
     {
-        [|Foo|](x: 1, true);
+        [|Goo|](x: 1, true);
     }
 
-    private void Foo(int x, bool b);
+    private void Goo(int x, bool b);
 }");
         }
 
@@ -3495,15 +4165,15 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestClashesWithMethod2()
         {
-            await TestMissingAsync(
-@"class Program : IFoo
+            await TestMissingInRegularAndScriptAsync(
+@"class Program : IGoo
 {
-    [|bool IFoo.Foo()
+    [|bool IGoo.Goo()
     {
     }|]
-} } interface IFoo
+} } interface IGoo
 {
-    void Foo();
+    void Goo();
 }");
         }
 
@@ -3511,7 +4181,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestReservedParametername1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public void Method()
@@ -3541,7 +4211,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestShadows1()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class Program
@@ -3558,7 +4228,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestShadows2()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class Program
@@ -3578,19 +4248,19 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInTopLevelMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"void M()
 {
-    [|Foo|]();
+    [|Goo|]();
 }",
 @"using System;
 
 void M()
 {
-    Foo();
+    Goo();
 }
 
-void Foo()
+void Goo()
 {
     throw new NotImplementedException();
 }");
@@ -3600,14 +4270,14 @@ void Foo()
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestLambdaReturnType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C<T, R>
 {
     private static Func<T, R> g = null;
     private static Func<T, R> f = (T) => {
-        return [|Foo<T, R>|](g);
+        return [|Goo<T, R>|](g);
     };
 }",
 @"using System;
@@ -3616,10 +4286,10 @@ class C<T, R>
 {
     private static Func<T, R> g = null;
     private static Func<T, R> f = (T) => {
-        return Foo<T, R>(g);
+        return Goo<T, R>(g);
     };
 
-    private static T2 Foo<T1, T2>(Func<T1, T2> g)
+    private static T2 Goo<T1, T2>(Func<T1, T2> g)
     {
         throw new NotImplementedException();
     }
@@ -3629,7 +4299,7 @@ class C<T, R>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateWithThrow()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -3662,7 +4332,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInDelegateConstructor()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 delegate void D(int x);
@@ -3696,14 +4366,14 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDelegateScenario()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C<T>
 {
-    public delegate void Foo<R>(R r);
+    public delegate void Goo<R>(R r);
 
     static void M()
     {
-        Foo<T> r = [|Goo<T>|];
+        Goo<T> r = [|Goo<T>|];
     }
 }");
         }
@@ -3712,13 +4382,13 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInheritedTypeParameters1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C<T, R>
 {
     void M()
     {
         I<T, R> i1;
-        I<T, R> i2 = i1.[|Foo|]();
+        I<T, R> i2 = i1.[|Goo|]();
     }
 }
 
@@ -3730,13 +4400,13 @@ interface I<T, R>
     void M()
     {
         I<T, R> i1;
-        I<T, R> i2 = i1.Foo();
+        I<T, R> i2 = i1.Goo();
     }
 }
 
 interface I<T, R>
 {
-    I<T, R> Foo();
+    I<T, R> Goo();
 }");
         }
 
@@ -3744,13 +4414,13 @@ interface I<T, R>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInheritedTypeParameters2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C<T>
 {
     void M()
     {
         I<T> i1;
-        I<T> i2 = i1.[|Foo|]();
+        I<T> i2 = i1.[|Goo|]();
     }
 }
 
@@ -3762,13 +4432,13 @@ interface I<T>
     void M()
     {
         I<T> i1;
-        I<T> i2 = i1.Foo();
+        I<T> i2 = i1.Goo();
     }
 }
 
 interface I<T>
 {
-    I<T> Foo();
+    I<T> Goo();
 }");
         }
 
@@ -3776,13 +4446,13 @@ interface I<T>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInheritedTypeParameters3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C<T>
 {
     void M()
     {
         I<T> i1;
-        I<T> i2 = i1.[|Foo|]();
+        I<T> i2 = i1.[|Goo|]();
     }
 }
 
@@ -3794,13 +4464,13 @@ interface I<X>
     void M()
     {
         I<T> i1;
-        I<T> i2 = i1.Foo();
+        I<T> i2 = i1.Goo();
     }
 }
 
 interface I<X>
 {
-    I<object> Foo();
+    I<object> Goo();
 }");
         }
 
@@ -3808,7 +4478,7 @@ interface I<X>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestBug4777()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -3844,16 +4514,16 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateOnInvalidInvocation()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C
 {
     public delegate int Func(ref int i);
 
     public int Goo { get; set; }
 
-    public Func Foo()
+    public Func Goo()
     {
-        return [|Foo|](ref Goo);
+        return [|Goo|](ref Goo);
     }
 }");
         }
@@ -3862,7 +4532,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMissingOnMultipleLambdaInferences()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 
@@ -3895,7 +4565,7 @@ class C<T> : List<T>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestParameterTypeAmbiguity()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace N
 {
     class N
@@ -3903,7 +4573,7 @@ class C<T> : List<T>
         static void Main(string[] args)
         {
             C c;
-            [|Foo|](c);
+            [|Goo|](c);
         }
     }
 
@@ -3920,10 +4590,10 @@ namespace N
         static void Main(string[] args)
         {
             C c;
-            Foo(c);
+            Goo(c);
         }
 
-        private static void Foo(C c)
+        private static void Goo(C c)
         {
             throw new NotImplementedException();
         }
@@ -3939,7 +4609,7 @@ namespace N
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestTernaryWithBodySidesBroken1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void Method()
@@ -3969,7 +4639,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestTernaryWithBodySidesBroken2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void Method()
@@ -3998,7 +4668,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestNotOnLeftOfAssign()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -4023,7 +4693,7 @@ public static class MyExtension
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMissingOnImplementedInterfaceMethod()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class Program<T> : ITest
 {
     [|void ITest.Method(T t)
@@ -4041,7 +4711,7 @@ interface ITest
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDelegateNamedVar()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Program
@@ -4097,58 +4767,63 @@ class A
         throw new NotImplementedException();
     }
 }",
-Options.Regular);
+new TestParameters(Options.Regular));
         }
 
+        [Theory]
+        [InlineData("class")]
+        [InlineData("struct")]
+        [InlineData("new()")]
+        [InlineData("unmanaged")]
         [WorkItem(542529, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542529")]
-        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestTypeParameterConstraints1()
+        [Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestTypeParameterConstraints(string constraint)
         {
-            await TestAsync(
-@"using System;
+            await TestInRegularAndScriptAsync(
+$@"using System;
 
-class A<T> where T : class
-{
-}
+class A<T> where T : {constraint}
+{{
+}}
 
 class Program
-{
-    static void Foo<T>(A<T> x) where T : class
-    {
+{{
+    static void Goo<T>(A<T> x) where T : {constraint}
+    {{
         [|Bar|](x);
-    }
-}",
-@"using System;
+    }}
+}}",
+$@"using System;
 
-class A<T> where T : class
-{
-}
+class A<T> where T : {constraint}
+{{
+}}
 
 class Program
-{
-    static void Foo<T>(A<T> x) where T : class
-    {
+{{
+    static void Goo<T>(A<T> x) where T : {constraint}
+    {{
         Bar(x);
-    }
+    }}
 
-    private static void Bar<T>(A<T> x) where T : class
-    {
+    private static void Bar<T>(A<T> x) where T : {constraint}
+    {{
         throw new NotImplementedException();
-    }
-}");
+    }}
+}}");
         }
 
         [WorkItem(542622, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542622")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestLambdaTypeParameters()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 
 class Program
 {
-    static void Foo<T>(List<T> x)
+    static void Goo<T>(List<T> x)
     {
         [|Bar|](() => x);
     }
@@ -4158,7 +4833,7 @@ using System.Collections.Generic;
 
 class Program
 {
-    static void Foo<T>(List<T> x)
+    static void Goo<T>(List<T> x)
     {
         Bar(() => x);
     }
@@ -4170,54 +4845,59 @@ class Program
 }");
         }
 
+        [Theory]
+        [InlineData("class")]
+        [InlineData("struct")]
+        [InlineData("new()")]
+        [InlineData("unmanaged")]
         [WorkItem(542626, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542626")]
-        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestMethodConstraints1()
+        [Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestMethodConstraints(string constraint)
         {
-            await TestAsync(
-@"using System;
+            await TestInRegularAndScriptAsync(
+$@"using System;
 
-class A<T> where T : class
-{
-}
+class A<T> where T : {constraint}
+{{
+}}
 
 class Program
-{
-    static void Foo<T>(A<T> x) where T : class
-    {
+{{
+    static void Goo<T>(A<T> x) where T : {constraint}
+    {{
         [|Bar<T>|](x);
-    }
-}",
-@"using System;
+    }}
+}}",
+$@"using System;
 
-class A<T> where T : class
-{
-}
+class A<T> where T : {constraint}
+{{
+}}
 
 class Program
-{
-    static void Foo<T>(A<T> x) where T : class
-    {
+{{
+    static void Goo<T>(A<T> x) where T : {constraint}
+    {{
         Bar<T>(x);
-    }
+    }}
 
-    private static void Bar<T>(A<T> x) where T : class
-    {
+    private static void Bar<T>(A<T> x) where T : {constraint}
+    {{
         throw new NotImplementedException();
-    }
-}");
+    }}
+}}");
         }
 
         [WorkItem(542627, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542627")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestCaptureMethodTypeParametersReferencedInOuterType1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System.Collections.Generic;
 
 class Program
 {
-    static void Foo<T>(List<T>.Enumerator x)
+    static void Goo<T>(List<T>.Enumerator x)
     {
         [|Bar|](x);
     }
@@ -4227,7 +4907,7 @@ using System.Collections.Generic;
 
 class Program
 {
-    static void Foo<T>(List<T>.Enumerator x)
+    static void Goo<T>(List<T>.Enumerator x)
     {
         Bar(x);
     }
@@ -4243,13 +4923,13 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestCaptureTypeParametersInConstraints()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 
 class Program
 {
-    static void Foo<T, S>(List<T> x) where T : S
+    static void Goo<T, S>(List<T> x) where T : S
     {
         [|Bar|](x);
     }
@@ -4259,7 +4939,7 @@ using System.Collections.Generic;
 
 class Program
 {
-    static void Foo<T, S>(List<T> x) where T : S
+    static void Goo<T, S>(List<T> x) where T : S
     {
         Bar(x);
     }
@@ -4275,7 +4955,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestConstraintOrder1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class A<T, S> where T : ICloneable, S
@@ -4284,14 +4964,14 @@ class A<T, S> where T : ICloneable, S
 
 class B<S>
 {
-    public virtual void Foo<T>(A<T, S> x) where T : ICloneable, S
+    public virtual void Goo<T>(A<T, S> x) where T : ICloneable, S
     {
     }
 }
 
 class C : B<Exception>
 {
-    public override void Foo<T>(A<T, Exception> x)
+    public override void Goo<T>(A<T, Exception> x)
     {
         [|Bar|](x);
     }
@@ -4304,14 +4984,14 @@ class A<T, S> where T : ICloneable, S
 
 class B<S>
 {
-    public virtual void Foo<T>(A<T, S> x) where T : ICloneable, S
+    public virtual void Goo<T>(A<T, S> x) where T : ICloneable, S
     {
     }
 }
 
 class C : B<Exception>
 {
-    public override void Foo<T>(A<T, Exception> x)
+    public override void Goo<T>(A<T, Exception> x)
     {
         Bar(x);
     }
@@ -4327,7 +5007,7 @@ class C : B<Exception>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestConstraintOrder2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class A<T, S, U> where T : U, S
@@ -4336,14 +5016,14 @@ class A<T, S, U> where T : U, S
 
 class B<S, U>
 {
-    public virtual void Foo<T>(A<T, S, U> x) where T : U, S
+    public virtual void Goo<T>(A<T, S, U> x) where T : U, S
     {
     }
 }
 
 class C<U> : B<Exception, U>
 {
-    public override void Foo<T>(A<T, Exception, U> x)
+    public override void Goo<T>(A<T, Exception, U> x)
     {
         [|Bar|](x);
     }
@@ -4356,14 +5036,14 @@ class A<T, S, U> where T : U, S
 
 class B<S, U>
 {
-    public virtual void Foo<T>(A<T, S, U> x) where T : U, S
+    public virtual void Goo<T>(A<T, S, U> x) where T : U, S
     {
     }
 }
 
 class C<U> : B<Exception, U>
 {
-    public override void Foo<T>(A<T, Exception, U> x)
+    public override void Goo<T>(A<T, Exception, U> x)
     {
         Bar(x);
     }
@@ -4379,20 +5059,20 @@ class C<U> : B<Exception, U>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateStaticMethodInField()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
 {
-    int x = [|Foo|]();
+    int x = [|Goo|]();
 }",
 @"using System;
 
 class C
 {
-    int x = Foo();
+    int x = Goo();
 
-    private static int Foo()
+    private static int Goo()
     {
         throw new NotImplementedException();
     }
@@ -4403,14 +5083,14 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateIntoConstrainedTypeParameter()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"interface I
 {
 }
 
 class Program
 {
-    static void Foo<T>(T x) where T : I
+    static void Goo<T>(T x) where T : I
     {
         x.[|Bar|]();
     }
@@ -4422,7 +5102,7 @@ class Program
 
 class Program
 {
-    static void Foo<T>(T x) where T : I
+    static void Goo<T>(T x) where T : I
     {
         x.Bar();
     }
@@ -4433,7 +5113,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestCaptureOuterTypeParameter()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 
@@ -4443,7 +5123,7 @@ class C<T>
     {
         D d = new D();
         List<T> y;
-        d.[|Foo|](y);
+        d.[|Goo|](y);
     }
 }
 
@@ -4459,13 +5139,13 @@ class C<T>
     {
         D d = new D();
         List<T> y;
-        d.Foo(y);
+        d.Goo(y);
     }
 }
 
 class D
 {
-    internal void Foo<T>(List<T> y)
+    internal void Goo<T>(List<T> y)
     {
         throw new NotImplementedException();
     }
@@ -4476,7 +5156,7 @@ class D
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestMostDerivedTypeParameter()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class A<T, U> where T : U
@@ -4485,14 +5165,14 @@ class A<T, U> where T : U
 
 class B<U>
 {
-    public virtual void Foo<T>(A<T, U> x) where T : Exception, U
+    public virtual void Goo<T>(A<T, U> x) where T : Exception, U
     {
     }
 }
 
 class C<U> : B<ArgumentException>
 {
-    public override void Foo<T>(A<T, ArgumentException> x)
+    public override void Goo<T>(A<T, ArgumentException> x)
     {
         [|Bar|](x);
     }
@@ -4505,14 +5185,14 @@ class A<T, U> where T : U
 
 class B<U>
 {
-    public virtual void Foo<T>(A<T, U> x) where T : Exception, U
+    public virtual void Goo<T>(A<T, U> x) where T : Exception, U
     {
     }
 }
 
 class C<U> : B<ArgumentException>
 {
-    public override void Foo<T>(A<T, ArgumentException> x)
+    public override void Goo<T>(A<T, ArgumentException> x)
     {
         Bar(x);
     }
@@ -4528,7 +5208,7 @@ class C<U> : B<ArgumentException>
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestAnonymousTypeArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -4555,7 +5235,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestListOfAnonymousTypesArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 
@@ -4564,11 +5244,11 @@ class C
     void M()
     {
         var v = new { };
-        var u = Foo(v);
+        var u = Goo(v);
         [|M|](u);
     }
 
-    private List<T> Foo<T>(T v)
+    private List<T> Goo<T>(T v)
     {
         return new List<T>();
     }
@@ -4581,7 +5261,7 @@ class C
     void M()
     {
         var v = new { };
-        var u = Foo(v);
+        var u = Goo(v);
         M(u);
     }
 
@@ -4590,7 +5270,7 @@ class C
         throw new NotImplementedException();
     }
 
-    private List<T> Foo<T>(T v)
+    private List<T> Goo<T>(T v)
     {
         return new List<T>();
     }
@@ -4601,12 +5281,12 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateImplicitlyTypedArrays()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
     {
-        var a = new[] { [|foo|](2), 2, 3 };
+        var a = new[] { [|goo|](2), 2, 3 };
     }
 }",
 @"using System;
@@ -4615,10 +5295,10 @@ class C
 {
     void M()
     {
-        var a = new[] { foo(2), 2, 3 };
+        var a = new[] { goo(2), 2, 3 };
     }
 
-    private int foo(int v)
+    private int goo(int v)
     {
         throw new NotImplementedException();
     }
@@ -4629,10 +5309,10 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenericArgWithMissingTypeParameter()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class Program
 {
-    public static int foo(ref int i)
+    public static int goo(ref int i)
     {
         return checked([|goo|]<>(ref i) * i);
     }
@@ -4648,17 +5328,17 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDuplicateWithErrorType()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class class1
 {
     public void Test()
     {
-        [|Foo|](x);
+        [|Goo|](x);
     }
 
-    private void Foo(object x)
+    private void Goo(object x)
     {
         throw new NotImplementedException();
     }
@@ -4668,10 +5348,10 @@ class class1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestNoGenerationIntoEntirelyHiddenType()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C
 {
-    void Foo()
+    void Goo()
     {
         D.[|Bar|]();
     }
@@ -4687,11 +5367,11 @@ class D
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDoNotGenerateIntoHiddenRegion1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"#line default
 class C
 {
-    void Foo()
+    void Goo()
     {
         [|Bar|]();
 #line hidden
@@ -4706,23 +5386,23 @@ class C
         throw new System.NotImplementedException();
     }
 
-    void Foo()
+    void Goo()
     {
         Bar();
 #line hidden
     }
 #line default
-}", compareTokens: false);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDoNotGenerateIntoHiddenRegion2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"#line default
 class C
 {
-    void Foo()
+    void Goo()
     {
         [|Bar|]();
 #line hidden
@@ -4736,7 +5416,7 @@ class C
 @"#line default
 class C
 {
-    void Foo()
+    void Goo()
     {
         Bar();
 #line hidden
@@ -4751,17 +5431,17 @@ class C
     {
         throw new System.NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDoNotGenerateIntoHiddenRegion3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"#line default
 class C
 {
-    void Foo()
+    void Goo()
     {
         [|Bar|]();
 #line hidden
@@ -4779,7 +5459,7 @@ class C
 @"#line default
 class C
 {
-    void Foo()
+    void Goo()
     {
         Bar();
 #line hidden
@@ -4798,19 +5478,19 @@ class C
     void Quux()
     {
     }
-}", compareTokens: false);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDoNotAddImportsIntoHiddenRegion()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"
 #line hidden
 class C
 #line default
 {
-    void Foo()
+    void Goo()
     {
         [|Bar|]();
 #line hidden
@@ -4827,13 +5507,13 @@ class C
         throw new System.NotImplementedException();
     }
 
-    void Foo()
+    void Goo()
     {
         Bar();
 #line hidden
     }
 #line default
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(545397, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545397")]
@@ -4841,7 +5521,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestVarParameterTypeName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Program
@@ -4849,7 +5529,7 @@ class Program
     void Main()
     {
         var x;
-        [|foo|](out x);
+        [|goo|](out x);
     }
 }",
 @"using System;
@@ -4859,10 +5539,10 @@ class Program
     void Main()
     {
         var x;
-        foo(out x);
+        goo(out x);
     }
 
-    private void foo(out object x)
+    private void goo(out object x)
     {
         throw new NotImplementedException();
     }
@@ -4873,11 +5553,11 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateInVenus1()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C
 {
-#line 1 ""foo""
-    void Foo()
+#line 1 ""goo""
+    void Goo()
     {
         this.[|Bar|]();
     }
@@ -4888,14 +5568,14 @@ class Program
 
         [WorkItem(538521, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538521")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestInIterator1()
+        public async Task TestWithYieldReturnInMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System.Collections.Generic;
 
 class Program
 {
-    IEnumerable<int> Foo()
+    IEnumerable<int> Goo()
     {
         yield return [|Bar|]();
     }
@@ -4905,9 +5585,76 @@ using System.Collections.Generic;
 
 class Program
 {
-    IEnumerable<int> Foo()
+    IEnumerable<int> Goo()
     {
         yield return Bar();
+    }
+
+    private int Bar()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestWithYieldReturnInAsyncMethod()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System.Collections.Generic;
+
+class Program
+{
+    async IAsyncEnumerable<int> Goo()
+    {
+        yield return [|Bar|]();
+    }
+}",
+@"using System;
+using System.Collections.Generic;
+
+class Program
+{
+    async IAsyncEnumerable<int> Goo()
+    {
+        yield return Bar();
+    }
+
+    private int Bar()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(30235, "https://github.com/dotnet/roslyn/issues/30235")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestWithYieldReturnInLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System.Collections.Generic;
+
+class Program
+{
+    void M()
+    {
+        IEnumerable<int> F()
+        {
+            yield return [|Bar|]();
+        }
+    }
+}",
+@"using System;
+using System.Collections.Generic;
+
+class Program
+{
+    void M()
+    {
+        IEnumerable<int> F()
+        {
+            yield return Bar();
+        }
     }
 
     private int Bar()
@@ -4921,12 +5668,12 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodMissingForAnyArgumentInInvocationHavingErrorTypeAndNotBelongingToEnclosingNamedType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Program
 {
     static void Main(string[] args)
     {
-        [|Main(args.Foo())|];
+        [|Main(args.Goo())|];
     }
 }",
 @"using System;
@@ -4935,7 +5682,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        Main(args.Foo());
+        Main(args.Goo());
     }
 
     private static void Main(object p)
@@ -4949,7 +5696,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithLambda()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"
 using System;
 
@@ -4974,14 +5721,14 @@ class Program
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(889349, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/889349")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodForDifferentParameterName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"
 class C
 {
@@ -5008,14 +5755,14 @@ class C
     }
 
     void M(int y) { }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(889349, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/889349")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodForDifferentParameterNameCaseSensitive()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"
 class C
 {
@@ -5042,25 +5789,25 @@ class C
     }
 
     void M(int y) { }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(769760, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/769760")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodForSameNamedButGenericUsage()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class Program
 {
     static void Main(string[] args)
     {
-        Foo();
-        [|Foo<int>|]();
+        Goo();
+        [|Goo<int>|]();
     }
 
-    private static void Foo()
+    private static void Goo()
     {
         throw new NotImplementedException();
     }
@@ -5071,27 +5818,27 @@ class Program
 {
     static void Main(string[] args)
     {
-        Foo();
-        Foo<int>();
+        Goo();
+        Goo<int>();
     }
 
-    private static void Foo<T>()
+    private static void Goo<T>()
     {
         throw new NotImplementedException();
     }
 
-    private static void Foo()
+    private static void Goo()
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(910589, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/910589")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodForNewErrorCodeCS7036()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class C
 {
@@ -5112,14 +5859,14 @@ class C
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(934729, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/934729")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodUnknownReturnTypeInLambda()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System.Collections.Generic; 
 class C
 {
@@ -5129,7 +5876,7 @@ class C
     }
 }",
 @"using System;
-using System.Collections.Generic;
+using System.Collections.Generic; 
 class C
 {
     void TestMethod(IEnumerable<C> c)
@@ -5141,14 +5888,14 @@ class C
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInUnsafeMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class C {
     unsafe void Method(he) {
@@ -5165,14 +5912,14 @@ class C {
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInUnsafeMethodWithPointerArray()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     unsafe static void M1(int *[] o)
@@ -5193,14 +5940,14 @@ class C
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInUnsafeBlock()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class Program
 {
@@ -5233,14 +5980,14 @@ class Program
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInUnsafeMethodNoPointersInParameterList()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class C {
     unsafe void Method(he) {
@@ -5257,14 +6004,14 @@ class C {
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInUnsafeBlockNoPointers()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class Program
 {
@@ -5297,14 +6044,14 @@ class Program
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodUnsafeReturnType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class Program
 {
@@ -5325,14 +6072,14 @@ class Program
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodUnsafeClass()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 unsafe class Program
 {
@@ -5353,14 +6100,14 @@ unsafe class Program
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodUnsafeNestedClass()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 unsafe class Program
 {
@@ -5387,14 +6134,14 @@ unsafe class Program
             throw new NotImplementedException();
         }
     }
-}", compareTokens: false);
+}");
         }
 
         [WorkItem(530177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530177")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodUnsafeNestedClass2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 class Program
 {
@@ -5421,18 +6168,18 @@ class Program
     {
         throw new NotImplementedException();
     }
-}", compareTokens: false);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestDoNotOfferMethodWithoutParenthesis()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
     {
-        [|Foo|];
+        [|Goo|];
     }
 }");
         }
@@ -5441,7 +6188,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5449,9 +6196,7 @@ class Program
         var x = nameof([|Z|]);
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     void M()
     {
@@ -5460,7 +6205,7 @@ class C
 
     private object Z()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -5469,7 +6214,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5477,9 +6222,7 @@ class C
         var x = nameof([|Z.X|]);
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     void M()
     {
@@ -5488,7 +6231,7 @@ class C
 
     private object nameof(object x)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -5497,7 +6240,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5505,9 +6248,7 @@ class C
         var x = nameof([|Z.X.Y|]);
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     void M()
     {
@@ -5516,7 +6257,7 @@ class C
 
     private object nameof(object y)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -5525,7 +6266,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf4()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5568,7 +6309,7 @@ namespace Z
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf5()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5582,7 +6323,7 @@ namespace Z
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf6()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5597,7 +6338,7 @@ namespace Z
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf7()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5607,9 +6348,7 @@ namespace Z
         var x = [|nameof(y, z)|];
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     void M()
     {
@@ -5620,7 +6359,7 @@ class C
 
     private object nameof(int y, string z)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -5629,7 +6368,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf8()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5659,7 +6398,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf9()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5667,9 +6406,7 @@ class C
         var x = [|nameof|](y, z);
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     void M()
     {
@@ -5678,7 +6415,7 @@ class C
 
     private object nameof(object y, object z)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -5687,7 +6424,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf10()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5715,7 +6452,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf11()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -5743,7 +6480,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf12()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5764,7 +6501,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf13()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5804,7 +6541,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf14()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5844,7 +6581,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf15()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5884,7 +6621,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInsideNameOf16()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -5924,7 +6661,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodForInaccessibleMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"namespace ConsoleApplication1
 {
     class Program
@@ -5980,7 +6717,7 @@ namespace ConsoleApplication1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccessMissing()
         {
-            await TestMissingAsync(
+            await TestMissingInRegularAndScriptAsync(
 @"class C
 {
     void Main(C a)
@@ -5994,7 +6731,7 @@ namespace ConsoleApplication1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void Main(C a)
@@ -6022,7 +6759,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void Main(C a)
@@ -6050,7 +6787,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void Main(C a)
@@ -6078,7 +6815,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess4()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"public class C
 {
     void Main(C a)
@@ -6106,7 +6843,7 @@ public class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestTestGenerateMethodInConditionalAccess5()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public E B { get; private set; }
@@ -6145,7 +6882,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess6()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public E B { get; private set; }
@@ -6184,7 +6921,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess7()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public E B { get; private set; }
@@ -6223,7 +6960,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInConditionalAccess8()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public E B { get; private set; }
@@ -6237,9 +6974,7 @@ class C
     {
     }
 }",
-@"using System;
-
-class C
+@"class C
 {
     public E B { get; private set; }
 
@@ -6252,8 +6987,37 @@ class C
     {
         internal object C()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
+    }
+}");
+        }
+
+        [WorkItem(39001, "https://github.com/dotnet/roslyn/issues/39001")]
+        [WorkItem(1064748, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1064748")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInConditionalAccess9()
+        {
+            await TestInRegularAndScriptAsync(
+@"struct C
+{
+    void Main(C? c)
+    {
+        int? v = c?.[|Bar|]();
+    }
+}",
+@"using System;
+
+struct C
+{
+    void Main(C? c)
+    {
+        int? v = c?.Bar();
+    }
+
+    private int Bar()
+    {
+        throw new NotImplementedException();
     }
 }");
         }
@@ -6261,7 +7025,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInPropertyInitializer()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Program
 {
     public int MyProperty { get; } = [|y|]();
@@ -6280,9 +7044,9 @@ class Program
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestGenerateMethodInExpressionBodiedMember()
+        public async Task TestGenerateMethodInExpressionBodiedProperty()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Program
 {
     public int Y => [|y|]();
@@ -6301,9 +7065,9 @@ class Program
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestGenerateMethodInExpressionBodiedMember2()
+        public async Task TestGenerateMethodInExpressionBodiedMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public static C GetValue(C p) => [|x|]();
@@ -6321,10 +7085,75 @@ class C
 }");
         }
 
+        [WorkItem(27647, "https://github.com/dotnet/roslyn/issues/27647")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestGenerateMethodInExpressionBodiedMember3()
+        public async Task TestGenerateMethodInExpressionBodiedAsyncTaskOfTMethod()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    public static async System.Threading.Tasks.Task<C> GetValue(C p) => [|x|]();
+}",
+@"using System;
+
+class C
+{
+    public static async System.Threading.Tasks.Task<C> GetValue(C p) => x();
+
+    private static C x()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(27647, "https://github.com/dotnet/roslyn/issues/27647")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedAsyncTaskMethod()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    public static async System.Threading.Tasks.Task GetValue(C p) => [|x|]();
+}",
+@"using System;
+
+class C
+{
+    public static async System.Threading.Tasks.Task GetValue(C p) => x();
+
+    private static void x()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedAsyncVoidMethod()
+        {
+            await TestInRegularAndScriptAsync(
+@"class C
+{
+    public static async void GetValue(C p) => [|x|]();
+}",
+@"using System;
+
+class C
+{
+    public static async void GetValue(C p) => x();
+
+    private static void x()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedOperator()
+        {
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     public static C operator --(C p) => [|x|]();
@@ -6345,7 +7174,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInDictionaryInitializer()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System.Collections.Generic;
 
 class Program
@@ -6375,7 +7204,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInDictionaryInitializer2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System.Collections.Generic;
 
 class Program
@@ -6405,7 +7234,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodInDictionaryInitializer3()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System.Collections.Generic;
 
 class Program
@@ -6436,7 +7265,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithConfigureAwaitFalse()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6446,7 +7275,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        bool x = await [|Foo|]().ConfigureAwait(false);
+        bool x = await [|Goo|]().ConfigureAwait(false);
     }
 }",
 @"using System;
@@ -6458,10 +7287,10 @@ class Program
 {
     static void Main(string[] args)
     {
-        bool x = await Foo().ConfigureAwait(false);
+        bool x = await Goo().ConfigureAwait(false);
     }
 
-    private static Task<bool> Foo()
+    private static Task<bool> Goo()
     {
         throw new NotImplementedException();
     }
@@ -6472,7 +7301,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithMethodChaining()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6482,7 +7311,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        bool x = await [|Foo|]().ConfigureAwait(false);
+        bool x = await [|Goo|]().ConfigureAwait(false);
     }
 }",
 @"using System;
@@ -6494,10 +7323,10 @@ class Program
 {
     static void Main(string[] args)
     {
-        bool x = await Foo().ConfigureAwait(false);
+        bool x = await Goo().ConfigureAwait(false);
     }
 
-    private static Task<bool> Foo()
+    private static Task<bool> Goo()
     {
         throw new NotImplementedException();
     }
@@ -6508,7 +7337,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithMethodChaining2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Threading.Tasks;
 
@@ -6548,7 +7377,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInCollectionInitializers1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -6576,7 +7405,7 @@ class C
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInCollectionInitializers2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class C
 {
     void M()
@@ -6600,26 +7429,11 @@ class C
 }");
         }
 
-        [WorkItem(774321, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/774321")]
-        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
-        public async Task TestGenerateMethodEquivalenceKey()
-        {
-            await TestEquivalenceKeyAsync(
-@"class C
-{
-    void M()
-    {
-        this.[|M1|](System.Exception.M2());
-    }
-}",
-string.Format(FeaturesResources.Generate_method_1_0, "M1", "C"));
-        }
-
         [WorkItem(5338, "https://github.com/dotnet/roslyn/issues/5338")]
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodLambdaOverload1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 using System.Collections.Concurrent;
 
@@ -6663,7 +7477,7 @@ class Class1
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodFromStaticProperty()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class Test
@@ -6699,7 +7513,7 @@ public class Test
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodFromStaticProperty_FieldInitializer()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class OtherClass
@@ -6751,7 +7565,7 @@ public class Test
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodForOverloadedSignatureWithDelegateType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class PropertyMetadata
@@ -6803,7 +7617,7 @@ class Program
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestGenerateMethodWithMultipleOfSameGenericType()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 public class C
@@ -6841,7 +7655,7 @@ public static class Ex
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task InferTypeParameters1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"using System;
 
 class C
@@ -6870,9 +7684,35 @@ class C
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(42986, "https://github.com/dotnet/roslyn/issues/42986")]
+        public async Task MethodWithNativeIntegerTypes()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void M(nint i, nuint i2)
+    {
+        (nint, nuint) d = [|NewMethod|](i, i2);
+    }
+}",
+@"class Class
+{
+    void M(nint i, nuint i2)
+    {
+        (nint, nuint) d = NewMethod(i, i2);
+    }
+
+    private (nint, nuint) NewMethod(nint i, nuint i2)
+    {
+        throw new System.NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task MethodWithTuple()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -6893,15 +7733,13 @@ class Class
     {
         throw new NotImplementedException();
     }
-}",
-parseOptions: TestOptions.Regular,
-withScriptOption: true);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task MethodWithTupleWithNames()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -6922,15 +7760,13 @@ class Class
     {
         throw new NotImplementedException();
     }
-}",
-parseOptions: TestOptions.Regular,
-withScriptOption: true);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task MethodWithTupleWithOneName()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -6951,16 +7787,14 @@ class Class
     {
         throw new NotImplementedException();
     }
-}",
-parseOptions: TestOptions.Regular,
-withScriptOption: true);
+}");
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         [WorkItem(12147, "https://github.com/dotnet/roslyn/issues/12147")]
         public async Task TestOutVariableDeclaration_ImplicitlyTyped()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -6968,9 +7802,7 @@ withScriptOption: true);
         [|Undefined|](out var c);
     }
 }",
-@"using System;
-
-class Class
+@"class Class
 {
     void Method()
     {
@@ -6979,7 +7811,7 @@ class Class
 
     private void Undefined(out object c)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -6988,7 +7820,7 @@ class Class
         [WorkItem(12147, "https://github.com/dotnet/roslyn/issues/12147")]
         public async Task TestOutVariableDeclaration_ExplicitlyTyped()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -7016,7 +7848,7 @@ class Class
         [WorkItem(12147, "https://github.com/dotnet/roslyn/issues/12147")]
         public async Task TestOutVariableDeclaration_ImplicitlyTyped_NamedArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -7024,9 +7856,7 @@ class Class
         [|Undefined|](a: out var c);
     }
 }",
-@"using System;
-
-class Class
+@"class Class
 {
     void Method()
     {
@@ -7035,7 +7865,7 @@ class Class
 
     private void Undefined(out object a)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -7044,7 +7874,7 @@ class Class
         [WorkItem(12147, "https://github.com/dotnet/roslyn/issues/12147")]
         public async Task TestOutVariableDeclaration_ExplicitlyTyped_NamedArgument()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method()
@@ -7079,9 +7909,7 @@ class Class
         [|Undefined|](out var c);
     }
 }",
-@"using System;
-
-class Class
+@"class Class
 {
     void Method()
     {
@@ -7090,11 +7918,10 @@ class Class
 
     private void Undefined(out object c)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }",
-parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6),
-withScriptOption: true);
+parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6));
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
@@ -7122,8 +7949,7 @@ class Class
         throw new NotImplementedException();
     }
 }",
-parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6),
-withScriptOption: true);
+parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6));
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
@@ -7137,9 +7963,7 @@ withScriptOption: true);
         [|Undefined|](a: out var c);
     }
 }",
-@"using System;
-
-class Class
+@"class Class
 {
     void Method()
     {
@@ -7148,11 +7972,10 @@ class Class
 
     private void Undefined(out object a)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }",
-parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6),
-withScriptOption: true);
+parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6));
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
@@ -7180,8 +8003,7 @@ class Class
         throw new NotImplementedException();
     }
 }",
-parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6),
-withScriptOption: true);
+parseOptions: TestOptions.Regular.WithLanguageVersion(CodeAnalysis.CSharp.LanguageVersion.CSharp6));
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
@@ -7246,7 +8068,7 @@ class C
 parseOptions: TestOptions.Regular);
         }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [Fact/*(Skip = "https://github.com/dotnet/roslyn/issues/15508")*/, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         [WorkItem(14136, "https://github.com/dotnet/roslyn/issues/14136")]
         public async Task TestDeconstruction3()
         {
@@ -7269,7 +8091,7 @@ class C
         (int x, (int, int)) = Method();
     }
 
-    private (int x, (int, int)) Method()
+    private object Method()
     {
         throw new NotImplementedException();
     }
@@ -7300,7 +8122,7 @@ class C
         (int x, int) = Method();
     }
 
-    private (int x, int) Method()
+    private object Method()
     {
         throw new NotImplementedException();
     }
@@ -7312,7 +8134,7 @@ parseOptions: TestOptions.Regular);
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInferBooleanTypeBasedOnName1()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
@@ -7320,9 +8142,7 @@ parseOptions: TestOptions.Regular);
         var v = [|IsPrime|](i);
     }
 }",
-@"using System;
-
-class Class
+@"class Class
 {
     void Method(int i)
     {
@@ -7331,7 +8151,7 @@ class Class
 
     private bool IsPrime(int i)
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 }");
         }
@@ -7340,7 +8160,7 @@ class Class
         [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
         public async Task TestInferBooleanTypeBasedOnName2()
         {
-            await TestAsync(
+            await TestInRegularAndScriptAsync(
 @"class Class
 {
     void Method(int i)
@@ -7348,9 +8168,7 @@ class Class
         var v = [|Issue|](i);
     }
 }",
-@"using System;
-
-class Class
+@"class Class
 {
     void Method(int i)
     {
@@ -7358,6 +8176,889 @@ class Class
     }
 
     private object Issue(int i)
+    {
+        throw new System.NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(16398, "https://github.com/dotnet/roslyn/issues/16398")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestReturnsByRef()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class C 
+{
+    public void Goo()
+    {
+        ref int i = ref [|Bar|]();
+    }
+}",
+@"
+using System;
+
+class C 
+{
+    public void Goo()
+    {
+        ref int i = ref Bar();
+    }
+
+    private ref int Bar()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(18969, "https://github.com/dotnet/roslyn/issues/18969")]
+        public async Task TestTupleElement1()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        (int x, string y) t = ([|Method|](), null);
+    }
+}",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        (int x, string y) t = (Method(), null);
+    }
+
+    private int Method()
+    {
+        throw new NotImplementedException();
+    }
+}",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(18969, "https://github.com/dotnet/roslyn/issues/18969")]
+        public async Task TestTupleElement2()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        (int x, string y) t = (0, [|Method|]());
+    }
+}",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        (int x, string y) t = (0, Method());
+    }
+
+    private string Method()
+    {
+        throw new NotImplementedException();
+    }
+}",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(25305, "https://github.com/dotnet/roslyn/issues/25305")]
+        public async Task TestTupleAssignment()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class C
+{
+    void Main()
+    {
+        int x, y;
+        (x, y) = [|Foo()|];
+    }
+}",
+@"using System;
+
+class C
+{
+    void Main()
+    {
+        int x, y;
+        (x, y) = Foo();
+    }
+
+    private (int x, int y) Foo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(25305, "https://github.com/dotnet/roslyn/issues/25305")]
+        public async Task TestTupleAssignment2()
+        {
+            await TestInRegularAndScriptAsync(
+@"using System;
+
+class C
+{
+    void Main()
+    {
+        (x, y) = [|Foo()|];
+    }
+}",
+@"using System;
+
+class C
+{
+    void Main()
+    {
+        (x, y) = Foo();
+    }
+
+    private (object x, object y) Foo()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(16975, "https://github.com/dotnet/roslyn/issues/16975")]
+        public async Task TestWithSameMethodNameAsTypeName1()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        [|Goo|]();
+    }
+}
+
+class Goo { }",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        Goo();
+    }
+
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class Goo { }",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(16975, "https://github.com/dotnet/roslyn/issues/16975")]
+        public async Task TestWithSameMethodNameAsTypeName2()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        [|Goo|]();
+    }
+}
+
+interface Goo { }",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        Goo();
+    }
+
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+interface Goo { }",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(16975, "https://github.com/dotnet/roslyn/issues/16975")]
+        public async Task TestWithSameMethodNameAsTypeName3()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        [|Goo|]();
+    }
+}
+
+struct Goo { }",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        Goo();
+    }
+
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+struct Goo { }",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(16975, "https://github.com/dotnet/roslyn/issues/16975")]
+        public async Task TestWithSameMethodNameAsTypeName4()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        [|Goo|]();
+    }
+}
+
+delegate void Goo()",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        Goo();
+    }
+
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+delegate void Goo()",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(16975, "https://github.com/dotnet/roslyn/issues/16975")]
+        public async Task TestWithSameMethodNameAsTypeName5()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        [|Goo|]();
+    }
+}
+
+namespace Goo { }",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        Goo();
+    }
+
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+namespace Goo { }",
+parseOptions: TestOptions.Regular);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [WorkItem(16975, "https://github.com/dotnet/roslyn/issues/16975")]
+        public async Task TestWithSameMethodNameAsTypeName6()
+        {
+            await TestAsync(
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        [|Goo|]();
+    }
+}
+
+enum Goo { One }",
+@"using System;
+
+class C
+{
+    public void M1()
+    {
+        Goo();
+    }
+
+    private void Goo()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+enum Goo { One }",
+parseOptions: TestOptions.Regular);
+        }
+
+        [WorkItem(26957, "https://github.com/dotnet/roslyn/issues/26957")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task NotOnNonExistedMetadataMemberWhenInsideLambda()
+        {
+            await TestMissingInRegularAndScriptAsync(
+@"using System;
+
+class Program
+{
+    static void Test(Action<string> action)
+    {
+    }
+
+    static void Main(string[] args)
+    {
+        Test(arg =>
+        {
+            Console.WriteLine(arg.[|NotFound|]());
+        });
+    }
+}");
+        }
+
+        [WorkItem(26993, "https://github.com/dotnet/roslyn/issues/26993")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedGetter()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    int Property
+    {
+        get => [|GenerateMethod|]();
+    }
+}",
+@"using System;
+
+class Class
+{
+    int Property
+    {
+        get => GenerateMethod();
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(26993, "https://github.com/dotnet/roslyn/issues/26993")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedSetter()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    int Property
+    {
+        set => [|GenerateMethod|](value);
+    }
+}",
+@"using System;
+
+class Class
+{
+    int Property
+    {
+        set => GenerateMethod(value);
+    }
+
+    private void GenerateMethod(int value)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(26993, "https://github.com/dotnet/roslyn/issues/26993")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method()
+    {
+        int Local() => [|GenerateMethod()|];
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method()
+    {
+        int Local() => GenerateMethod();
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(27647, "https://github.com/dotnet/roslyn/issues/27647")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedAsyncTaskOfTLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method()
+    {
+        async System.Threading.Tasks.Task<int> Local() => [|GenerateMethod()|];
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method()
+    {
+        async System.Threading.Tasks.Task<int> Local() => GenerateMethod();
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(27647, "https://github.com/dotnet/roslyn/issues/27647")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedAsyncTaskLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method()
+    {
+        async System.Threading.Tasks.Task Local() => [|GenerateMethod()|];
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method()
+    {
+        async System.Threading.Tasks.Task Local() => GenerateMethod();
+    }
+
+    private void GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedAsyncVoidLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method()
+    {
+        async void Local() => [|GenerateMethod()|];
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method()
+    {
+        async void Local() => GenerateMethod();
+    }
+
+    private void GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(26993, "https://github.com/dotnet/roslyn/issues/26993")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInBlockBodiedLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method()
+    {
+        int Local()
+        {
+            return [|GenerateMethod()|];
+        }
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method()
+    {
+        int Local()
+        {
+            return GenerateMethod();
+        }
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInBlockBodiedAsyncTaskOfTLocalFunction()
+        {
+            await TestInRegularAndScriptAsync(
+@"class Class
+{
+    void Method()
+    {
+        async System.Threading.Tasks.Task<int> Local()
+        {
+            return [|GenerateMethod()|];
+        }
+    }
+}",
+@"using System;
+
+class Class
+{
+    void Method()
+    {
+        async System.Threading.Tasks.Task<int> Local()
+        {
+            return GenerateMethod();
+        }
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(26993, "https://github.com/dotnet/roslyn/issues/26993")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInBlockBodiedLocalFunctionInsideLambdaExpression()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class Class
+{
+    void Method()
+    {
+        Action action = () =>  
+        {
+            int Local()
+            {
+                return [|GenerateMethod()|];
+            }
+        }
+    }
+}",
+@"
+using System;
+
+class Class
+{
+    void Method()
+    {
+        Action action = () =>  
+        {
+            int Local()
+            {
+                return GenerateMethod();
+            }
+        }
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(26993, "https://github.com/dotnet/roslyn/issues/26993")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestGenerateMethodInExpressionBodiedLocalFunctionInsideLambdaExpression()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class Class
+{
+    void Method()
+    {
+        Action action = () =>  
+        {
+            int Local() => [|GenerateMethod()|];
+        }
+    }
+}",
+@"
+using System;
+
+class Class
+{
+    void Method()
+    {
+        Action action = () =>  
+        {
+            int Local() => GenerateMethod();
+        }
+    }
+
+    private int GenerateMethod()
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [WorkItem(24138, "https://github.com/dotnet/roslyn/issues/24138")]
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestInCaseWhenClause()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class Class
+{
+    void M(object goo)
+    {
+        switch (goo)
+        {
+            case int i when [|GreaterThanZero(i)|]:
+                break;
+        }
+    }
+}",
+@"
+using System;
+
+class Class
+{
+    void M(object goo)
+    {
+        switch (goo)
+        {
+            case int i when GreaterThanZero(i):
+                break;
+        }
+    }
+
+    private bool GreaterThanZero(int i)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestWithFunctionPointerArgument()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class Class
+{
+    unsafe void M()
+    {
+        delegate*<int, float> y;
+        [|M2(y)|];
+    }
+}",
+@"
+using System;
+
+class Class
+{
+    unsafe void M()
+    {
+        delegate*<int, float> y;
+        [|M2(y)|];
+    }
+
+    private unsafe void M2(delegate*<int, float> y)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestWithFunctionPointerUnmanagedConvention()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class Class
+{
+    unsafe void M()
+    {
+        delegate* unmanaged<int, float> y;
+        [|M2(y)|];
+    }
+}",
+@"
+using System;
+
+class Class
+{
+    unsafe void M()
+    {
+        delegate* unmanaged<int, float> y;
+        [|M2(y)|];
+    }
+
+    private unsafe void M2(delegate* unmanaged<int, float> y)
+    {
+        throw new NotImplementedException();
+    }
+}");
+        }
+
+        [Theory, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        [InlineData("Cdecl")]
+        [InlineData("Fastcall")]
+        [InlineData("Thiscall")]
+        [InlineData("Stdcall")]
+        [InlineData("Thiscall, Stdcall")]
+        [InlineData("Bad")] // Bad conventions should still be generatable
+        public async Task TestWithFunctionPointerUnmanagedSpecificConvention(string convention)
+        {
+            await TestInRegularAndScriptAsync(
+$@"
+using System;
+
+class Class
+{{
+    unsafe void M()
+    {{
+        delegate* unmanaged[{convention}]<int, float> y;
+        [|M2(y)|];
+    }}
+}}",
+$@"
+using System;
+
+class Class
+{{
+    unsafe void M()
+    {{
+        delegate* unmanaged[{convention}]<int, float> y;
+        [|M2(y)|];
+    }}
+
+    private unsafe void M2(delegate* unmanaged[{convention}]<int, float> y)
+    {{
+        throw new NotImplementedException();
+    }}
+}}");
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.CodeActionsGenerateMethod)]
+        public async Task TestWithFunctionPointerUnmanagedMissingConvention()
+        {
+            await TestInRegularAndScriptAsync(
+@"
+using System;
+
+class Class
+{
+    unsafe void M()
+    {
+        delegate* unmanaged[]<int, float> y;
+        [|M2(y)|];
+    }
+}",
+@"
+using System;
+
+class Class
+{
+    unsafe void M()
+    {
+        delegate* unmanaged[]<int, float> y;
+        [|M2(y)|];
+    }
+
+    private unsafe void M2(delegate* unmanaged<int, float> y)
     {
         throw new NotImplementedException();
     }

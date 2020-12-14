@@ -1,10 +1,13 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Globalization
 Imports System.Runtime.InteropServices
 Imports System.Threading
 Imports Microsoft.CodeAnalysis.Collections
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.RuntimeMembers
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -19,6 +22,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         ''' Names of the elements as provided when tuple was created
         ''' </summary>
         Private ReadOnly _providedElementNames As ImmutableArray(Of String)
+
+        ''' <summary>
+        ''' Which element names were inferred and therefore cannot be used.
+        ''' If none of the element names were inferred, or inferred names can be used (no tracking necessary), leave as default.
+        ''' This information is ignored in type equality and comparison.
+        ''' </summary>
+        Private ReadOnly _errorPositions As ImmutableArray(Of Boolean)
 
         ''' <summary>
         ''' Actual element names. 
@@ -38,6 +48,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Private _lazyUnderlyingDefinitionToMemberMap As SmallDictionary(Of Symbol, Symbol)
 
         Friend Const RestPosition As Integer = 8
+        Friend Const RestIndex As Integer = RestPosition - 1
 
         Friend Const TupleTypeName As String = "ValueTuple"
         Friend Const RestFieldName As String = "Rest"
@@ -268,7 +279,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End Get
         End Property
 
-        Friend Overrides ReadOnly Property IsSerializable As Boolean
+        Public Overrides ReadOnly Property IsSerializable As Boolean
             Get
                 Return Me._underlyingType.IsSerializable
             End Get
@@ -316,19 +327,31 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End Get
         End Property
 
-        Private Sub New(locationOpt As Location, underlyingType As NamedTypeSymbol, elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String), elementTypes As ImmutableArray(Of TypeSymbol))
-            Me.New(If((locationOpt Is Nothing), ImmutableArray(Of Location).Empty, ImmutableArray.Create(Of Location)(locationOpt)), underlyingType, elementLocations, elementNames, elementTypes)
+        Private Sub New(locationOpt As Location, underlyingType As NamedTypeSymbol, elementLocations As ImmutableArray(Of Location),
+                        elementNames As ImmutableArray(Of String), elementTypes As ImmutableArray(Of TypeSymbol),
+                        errorPositions As ImmutableArray(Of Boolean))
+
+            Me.New(If((locationOpt Is Nothing), ImmutableArray(Of Location).Empty, ImmutableArray.Create(Of Location)(locationOpt)),
+                   underlyingType, elementLocations, elementNames, elementTypes, errorPositions)
         End Sub
 
-        Private Sub New(locations As ImmutableArray(Of Location), underlyingType As NamedTypeSymbol, elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String), elementTypes As ImmutableArray(Of TypeSymbol))
+        Private Sub New(locations As ImmutableArray(Of Location), underlyingType As NamedTypeSymbol,
+                        elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String),
+                        elementTypes As ImmutableArray(Of TypeSymbol), errorPositions As ImmutableArray(Of Boolean))
+
             MyBase.New(underlyingType)
             Debug.Assert(elementLocations.IsDefault OrElse elementLocations.Length = elementTypes.Length)
             Debug.Assert(elementNames.IsDefault OrElse elementNames.Length = elementTypes.Length)
             Debug.Assert(Not underlyingType.IsTupleType)
+            Debug.Assert(TypeOf underlyingType Is InstanceTypeSymbol OrElse
+                         TypeOf underlyingType Is InstanceErrorTypeSymbol OrElse
+                         TypeOf underlyingType Is SubstitutedNamedType OrElse
+                         TypeOf underlyingType Is SubstitutedErrorType) ' Required to ensure symmetrical equality
             Me._elementLocations = elementLocations
             Me._providedElementNames = elementNames
             Me._elementTypes = elementTypes
             Me._locations = locations
+            Me._errorPositions = errorPositions
         End Sub
 
         Friend Shared Function Create(
@@ -337,9 +360,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                                      elementLocations As ImmutableArray(Of Location),
                                      elementNames As ImmutableArray(Of String),
                                      compilation As VisualBasicCompilation,
+                                     shouldCheckConstraints As Boolean,
+                                     errorPositions As ImmutableArray(Of Boolean),
                                      Optional syntax As SyntaxNode = Nothing,
                                      Optional diagnostics As DiagnosticBag = Nothing) As TupleTypeSymbol
-
+            Debug.Assert(Not shouldCheckConstraints OrElse syntax IsNot Nothing)
             Debug.Assert(elementNames.IsDefault OrElse elementTypes.Length = elementNames.Length)
             Dim length As Integer = elementTypes.Length
 
@@ -348,27 +373,39 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End If
 
             Dim tupleUnderlyingType As NamedTypeSymbol = TupleTypeSymbol.GetTupleUnderlyingType(elementTypes, syntax, compilation, diagnostics)
-            If DirectCast(compilation.SourceModule, SourceModuleSymbol).AnyReferencedAssembliesAreLinked Then
+            If diagnostics IsNot Nothing AndAlso DirectCast(compilation.SourceModule, SourceModuleSymbol).AnyReferencedAssembliesAreLinked Then
                 ' Complain about unembeddable types from linked assemblies.
                 Emit.NoPia.EmbeddedTypesManager.IsValidEmbeddableType(tupleUnderlyingType, syntax, diagnostics)
             End If
 
-            Return TupleTypeSymbol.Create(locationOpt, tupleUnderlyingType, elementLocations, elementNames)
+            Dim constructedType = TupleTypeSymbol.Create(locationOpt, tupleUnderlyingType, elementLocations, elementNames, errorPositions)
+            If shouldCheckConstraints Then
+                constructedType.CheckConstraints(syntax, elementLocations, diagnostics)
+            End If
+
+            Return constructedType
         End Function
 
         Public Shared Function Create(tupleCompatibleType As NamedTypeSymbol) As TupleTypeSymbol
-            Return TupleTypeSymbol.Create(ImmutableArray(Of Location).Empty, tupleCompatibleType, Nothing, Nothing)
+            Return TupleTypeSymbol.Create(ImmutableArray(Of Location).Empty, tupleCompatibleType, Nothing, Nothing, Nothing)
         End Function
 
         Public Shared Function Create(tupleCompatibleType As NamedTypeSymbol, elementNames As ImmutableArray(Of String)) As TupleTypeSymbol
-            Return TupleTypeSymbol.Create(ImmutableArray(Of Location).Empty, tupleCompatibleType, Nothing, elementNames)
+            Return TupleTypeSymbol.Create(ImmutableArray(Of Location).Empty, tupleCompatibleType, Nothing, elementNames, errorPositions:=Nothing)
         End Function
 
-        Public Shared Function Create(locationOpt As Location, tupleCompatibleType As NamedTypeSymbol, elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String)) As TupleTypeSymbol
-            Return TupleTypeSymbol.Create(If((locationOpt Is Nothing), ImmutableArray(Of Location).Empty, ImmutableArray.Create(Of Location)(locationOpt)), tupleCompatibleType, elementLocations, elementNames)
+        Public Shared Function Create(locationOpt As Location, tupleCompatibleType As NamedTypeSymbol,
+                                      elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String),
+                                      errorPositions As ImmutableArray(Of Boolean)) As TupleTypeSymbol
+
+            Return TupleTypeSymbol.Create(If((locationOpt Is Nothing), ImmutableArray(Of Location).Empty, ImmutableArray.Create(Of Location)(locationOpt)),
+                                          tupleCompatibleType, elementLocations, elementNames, errorPositions)
         End Function
 
-        Public Shared Function Create(locations As ImmutableArray(Of Location), tupleCompatibleType As NamedTypeSymbol, elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String)) As TupleTypeSymbol
+        Public Shared Function Create(locations As ImmutableArray(Of Location), tupleCompatibleType As NamedTypeSymbol,
+                                      elementLocations As ImmutableArray(Of Location), elementNames As ImmutableArray(Of String),
+                                      errorPositions As ImmutableArray(Of Boolean)) As TupleTypeSymbol
+
             Debug.Assert(tupleCompatibleType.IsTupleCompatible())
 
             Dim elementTypes As ImmutableArray(Of TypeSymbol)
@@ -383,7 +420,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                 elementTypes = tupleCompatibleType.TypeArgumentsNoUseSiteDiagnostics
             End If
 
-            Return New TupleTypeSymbol(locations, tupleCompatibleType, elementLocations, elementNames, elementTypes)
+            Return New TupleTypeSymbol(locations, tupleCompatibleType, elementLocations, elementNames, elementTypes, errorPositions)
         End Function
 
         Private Shared Function EnsureRestExtensionsAreTuples(tupleCompatibleType As NamedTypeSymbol) As NamedTypeSymbol
@@ -405,7 +442,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 
                 Dim typeArgumentsBuilder As ArrayBuilder(Of TypeWithModifiers) = ArrayBuilder(Of TypeWithModifiers).GetInstance(TupleTypeSymbol.RestPosition)
                 Do
-                    Dim extensionTuple As TupleTypeSymbol = TupleTypeSymbol.Create(CType(Nothing, Location), tupleCompatibleType, Nothing, Nothing)
+                    Dim extensionTuple As TupleTypeSymbol = TupleTypeSymbol.Create(CType(Nothing, Location), tupleCompatibleType, Nothing, Nothing, Nothing)
                     tupleCompatibleType = nonTupleTypeChain.Pop()
                     tupleCompatibleType = TupleTypeSymbol.ReplaceRestExtensionType(tupleCompatibleType, typeArgumentsBuilder, extensionTuple)
                 Loop While nonTupleTypeChain.Count <> 0
@@ -441,10 +478,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 
         Friend Function WithUnderlyingType(newUnderlyingType As NamedTypeSymbol) As TupleTypeSymbol
             Debug.Assert(Not newUnderlyingType.IsTupleType AndAlso newUnderlyingType.IsTupleOrCompatibleWithTupleOfCardinality(Me._elementTypes.Length))
-            Return TupleTypeSymbol.Create(Me._locations, newUnderlyingType, Me._elementLocations, Me._providedElementNames)
+            Return TupleTypeSymbol.Create(Me._locations, newUnderlyingType, Me._elementLocations, Me._providedElementNames, Me._errorPositions)
         End Function
 
         Friend Function WithElementNames(newElementNames As ImmutableArray(Of String)) As TupleTypeSymbol
+
             Debug.Assert(newElementNames.IsDefault OrElse Me._elementTypes.Length = newElementNames.Length)
 
             If Me._providedElementNames.IsDefault Then
@@ -457,7 +495,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                 End If
             End If
 
-            Return New TupleTypeSymbol(CType(Nothing, Location), Me._underlyingType, Nothing, newElementNames, Me._elementTypes)
+            ' Note: this method is used to preserved names during target-typing, it doesn't need to preserved error positions
+            Return New TupleTypeSymbol(CType(Nothing, Location), Me._underlyingType, Nothing, newElementNames, Me._elementTypes, Nothing)
         End Function
 
         Friend Shared Sub GetUnderlyingTypeChain(underlyingTupleType As NamedTypeSymbol, underlyingTupleTypeChain As ArrayBuilder(Of NamedTypeSymbol))
@@ -568,7 +607,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Return "Item" & position
         End Function
 
-        Private Shared ForbiddenNames As HashSet(Of String) = New HashSet(Of String)(
+        Private Shared ReadOnly ForbiddenNames As HashSet(Of String) = New HashSet(Of String)(
             {"CompareTo", "Deconstruct", "Equals", "GetHashCode", "Rest", "ToString"},
             IdentifierComparison.Comparer)
 
@@ -705,9 +744,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                                     defaultTupleField = New TupleVirtualElementFieldSymbol(Me,
                                                                                            FieldSymbol,
                                                                                            defaultName,
-                                                                                           tupleFieldIndex,
-                                                                                           location,
-                                                                                           defaultImplicitlyDeclared,
+                                                                                           cannotUse:=False,
+                                                                                           tupleElementOrdinal:=tupleFieldIndex,
+                                                                                           location:=location,
+                                                                                           isImplicitlyDeclared:=defaultImplicitlyDeclared,
                                                                                            correspondingDefaultFieldOpt:=Nothing)
                                 Else
                                     Debug.Assert(IdentifierComparison.Equals(FieldSymbol.Name, defaultName), "top level underlying field must match default name")
@@ -724,11 +764,14 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                                 members.Add(defaultTupleField)
 
                                 If defaultImplicitlyDeclared AndAlso Not String.IsNullOrEmpty(providedName) Then
+                                    Dim isError = If(_errorPositions.IsDefault, False, _errorPositions(tupleFieldIndex))
+
                                     ' The name given doesn't match the default name Item8, etc.
                                     ' Add a virtual field with the given name
                                     members.Add(New TupleVirtualElementFieldSymbol(Me,
                                                                                    FieldSymbol,
                                                                                    providedName,
+                                                                                   isError,
                                                                                    tupleFieldIndex,
                                                                                    location,
                                                                                    isImplicitlyDeclared:=False,
@@ -903,7 +946,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         End Function
 
         Public Overrides Function GetMembers(name As String) As ImmutableArray(Of Symbol)
-            Return Me.GetMembers().WhereAsArray(Function(m As Symbol) IdentifierComparison.Equals(m.Name, name))
+            Return Me.GetMembers().WhereAsArray(Function(member, name_) IdentifierComparison.Equals(member.Name, name_), name)
         End Function
 
         Public Overrides Function GetTypeMembers() As ImmutableArray(Of NamedTypeSymbol)
@@ -928,35 +971,45 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Return Me._underlyingType.GetAttributes()
         End Function
 
-        Public Overrides Function Equals(obj As Object) As Boolean
+        Public Overrides Function Equals(obj As TypeSymbol, comparison As TypeCompareKind) As Boolean
+            If obj Is Me Then
+                Return True
+            End If
+
+            If obj Is Nothing Then
+                Return False
+            End If
+
             Dim otherTuple = TryCast(obj, TupleTypeSymbol)
-            If otherTuple Is Nothing Then
+
+            If otherTuple Is Nothing AndAlso (comparison And TypeCompareKind.IgnoreTupleNames) = 0 Then
                 Return False
             End If
 
-            Dim otherUnderlying = otherTuple.TupleUnderlyingType
-            If (Me.TupleUnderlyingType <> otherUnderlying) Then
+            If Not Me.TupleUnderlyingType.Equals(obj.GetTupleUnderlyingTypeOrSelf(), comparison) Then
                 Return False
             End If
 
-            Dim myNames = Me.TupleElementNames
-            Dim otherNames = otherTuple.TupleElementNames
+            If (comparison And TypeCompareKind.IgnoreTupleNames) = 0 Then
+                Dim myNames = Me.TupleElementNames
+                Dim otherNames = otherTuple.TupleElementNames
 
-            If myNames.IsDefault Then
-                Return otherNames.IsDefault
-            End If
+                If myNames.IsDefault Then
+                    Return otherNames.IsDefault
+                End If
 
-            If otherNames.IsDefault Then
-                Return False
-            End If
-
-            Debug.Assert(myNames.Length = otherNames.Length)
-
-            For i As Integer = 0 To myNames.Length - 1
-                If Not IdentifierComparison.Equals(myNames(i), otherNames(i)) Then
+                If otherNames.IsDefault Then
                     Return False
                 End If
-            Next
+
+                Debug.Assert(myNames.Length = otherNames.Length)
+
+                For i As Integer = 0 To myNames.Length - 1
+                    If Not IdentifierComparison.Equals(myNames(i), otherNames(i)) Then
+                        Return False
+                    End If
+                Next
+            End If
 
             Return True
         End Function
@@ -1021,16 +1074,17 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 
         Friend Overrides Function InternalSubstituteTypeParameters(substitution As TypeSubstitution) As TypeWithModifiers
             Dim substitutedUnderlying = DirectCast(Me.TupleUnderlyingType.InternalSubstituteTypeParameters(substitution).Type, NamedTypeSymbol)
-            Dim tupleType = TupleTypeSymbol.Create(Me._locations, substitutedUnderlying, Me._elementLocations, Me._providedElementNames)
+            Dim tupleType = TupleTypeSymbol.Create(Me._locations, substitutedUnderlying, Me._elementLocations,
+                                                   Me._providedElementNames, Me._errorPositions)
 
             Return New TypeWithModifiers(tupleType, Nothing)
         End Function
 
-        Friend Overrides Function MakeDeclaredBase(basesBeingResolved As ConsList(Of Symbol), diagnostics As DiagnosticBag) As NamedTypeSymbol
+        Friend Overrides Function MakeDeclaredBase(basesBeingResolved As BasesBeingResolved, diagnostics As DiagnosticBag) As NamedTypeSymbol
             Return Me._underlyingType.MakeDeclaredBase(basesBeingResolved, diagnostics)
         End Function
 
-        Friend Overrides Function MakeDeclaredInterfaces(basesBeingResolved As ConsList(Of Symbol), diagnostics As DiagnosticBag) As ImmutableArray(Of NamedTypeSymbol)
+        Friend Overrides Function MakeDeclaredInterfaces(basesBeingResolved As BasesBeingResolved, diagnostics As DiagnosticBag) As ImmutableArray(Of NamedTypeSymbol)
             Return Me._underlyingType.MakeDeclaredInterfaces(basesBeingResolved, diagnostics)
         End Function
 
@@ -1059,6 +1113,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                 Return
             End If
 
+            Dim inferredNames As ImmutableArray(Of Boolean) = literal.InferredNamesOpt
+            Dim noInferredNames As Boolean = inferredNames.IsDefault
             Dim destinationNames As ImmutableArray(Of String) = destination.TupleElementNames
             Dim sourceLength As Integer = sourceNames.Length
             Dim allMissing As Boolean = destinationNames.IsDefault
@@ -1066,7 +1122,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 
             For i = 0 To sourceLength - 1
                 Dim sourceName = sourceNames(i)
-                If sourceName IsNot Nothing AndAlso (allMissing OrElse String.CompareOrdinal(destinationNames(i), sourceName) <> 0) Then
+                Dim wasInferred = If(noInferredNames, False, inferredNames(i))
+
+                If sourceName IsNot Nothing AndAlso Not wasInferred AndAlso (allMissing OrElse String.CompareOrdinal(destinationNames(i), sourceName) <> 0) Then
                     diagnostics.Add(ERRID.WRN_TupleLiteralNameMismatch, literal.Arguments(i).Syntax.Parent.Location, sourceName, destination)
                 End If
             Next

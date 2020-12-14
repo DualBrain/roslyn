@@ -1,19 +1,18 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.Text;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.PatternMatching
 {
     internal struct PatternMatch : IComparable<PatternMatch>
     {
-        /// <summary>
-        /// The weight of a CamelCase match. A higher number indicates a more accurate match.
-        /// </summary>
-        public int? CamelCaseWeight { get; }
-
         /// <summary>
         /// True if this was a case sensitive match.
         /// </summary>
@@ -36,11 +35,9 @@ namespace Microsoft.CodeAnalysis.PatternMatching
             PatternMatchKind resultType,
             bool punctuationStripped,
             bool isCaseSensitive,
-            TextSpan? matchedSpan,
-            int? camelCaseWeight = null)
+            TextSpan? matchedSpan)
             : this(resultType, punctuationStripped, isCaseSensitive,
-                   matchedSpan == null ? ImmutableArray<TextSpan>.Empty : ImmutableArray.Create(matchedSpan.Value),
-                   camelCaseWeight)
+                   matchedSpan == null ? ImmutableArray<TextSpan>.Empty : ImmutableArray.Create(matchedSpan.Value))
         {
         }
 
@@ -48,81 +45,32 @@ namespace Microsoft.CodeAnalysis.PatternMatching
             PatternMatchKind resultType,
             bool punctuationStripped,
             bool isCaseSensitive,
-            ImmutableArray<TextSpan> matchedSpans,
-            int? camelCaseWeight = null)
+            ImmutableArray<TextSpan> matchedSpans)
             : this()
         {
             this.Kind = resultType;
             this.IsCaseSensitive = isCaseSensitive;
-            this.CamelCaseWeight = camelCaseWeight;
             this.MatchedSpans = matchedSpans;
             _punctuationStripped = punctuationStripped;
-
-            if ((resultType == PatternMatchKind.CamelCase) != camelCaseWeight.HasValue)
-            {
-                throw new ArgumentException("A CamelCase weight must be specified if and only if the resultType is CamelCase.");
-            }
         }
+
+        public PatternMatch WithMatchedSpans(ImmutableArray<TextSpan> matchedSpans)
+            => new(Kind, _punctuationStripped, IsCaseSensitive, matchedSpans);
 
         public int CompareTo(PatternMatch other)
-        {
-            return CompareTo(other, ignoreCase: false);
-        }
+            => CompareTo(other, ignoreCase: false);
 
         public int CompareTo(PatternMatch other, bool ignoreCase)
-        {
-            int diff;
-            if ((diff = CompareType(this, other)) != 0 ||
-                (diff = CompareCamelCase(this, other)) != 0 ||
-                (diff = CompareCase(this, other, ignoreCase)) != 0 ||
-                (diff = ComparePunctuation(this, other)) != 0)
-            {
-                return diff;
-            }
+            => ComparerWithState.CompareTo(this, other, ignoreCase, s_comparers);
 
-            return 0;
-        }
-
-        private static int ComparePunctuation(PatternMatch result1, PatternMatch result2)
-        {
-            // Consider a match to be better if it was successful without stripping punctuation
-            // versus a match that had to strip punctuation to succeed.
-            if (result1._punctuationStripped != result2._punctuationStripped)
-            {
-                return result1._punctuationStripped ? 1 : -1;
-            }
-
-            return 0;
-        }
-
-        private static int CompareCase(PatternMatch result1, PatternMatch result2, bool ignoreCase)
-        {
-            if (!ignoreCase)
-            {
-                if (result1.IsCaseSensitive != result2.IsCaseSensitive)
-                {
-                    return result1.IsCaseSensitive ? -1 : 1;
-                }
-            }
-
-            return 0;
-        }
-
-        private static int CompareType(PatternMatch result1, PatternMatch result2)
-        {
-            return result1.Kind - result2.Kind;
-        }
-
-        private static int CompareCamelCase(PatternMatch result1, PatternMatch result2)
-        {
-            if (result1.Kind == PatternMatchKind.CamelCase && result2.Kind == PatternMatchKind.CamelCase)
-            {
-                // Swap the values here.  If result1 has a higher weight, then we want it to come
-                // first.
-                return result2.CamelCaseWeight.Value - result1.CamelCaseWeight.Value;
-            }
-
-            return 0;
-        }
+        private static readonly ImmutableArray<Func<PatternMatch, bool, IComparable>> s_comparers =
+            ImmutableArray.Create<Func<PatternMatch, bool, IComparable>>(
+                // Compare types
+                (p, b) => p.Kind,
+                // Compare cases
+                (p, b) => !b && !p.IsCaseSensitive,
+                // Consider a match to be better if it was successful without stripping punctuation
+                // versus a match that had to strip punctuation to succeed.
+                (p, b) => p._punctuationStripped);
     }
 }

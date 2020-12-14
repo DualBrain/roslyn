@@ -1,18 +1,22 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Roslyn.Utilities;
 using EmitContext = Microsoft.CodeAnalysis.Emit.EmitContext;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Emit;
 
 namespace Microsoft.Cci
 {
     internal abstract class ReferenceIndexerBase : MetadataVisitor
     {
-        private readonly HashSet<IReference> _alreadySeen = new HashSet<IReference>();
-        private readonly HashSet<IReference> _alreadyHasToken = new HashSet<IReference>();
+        private readonly HashSet<IReferenceOrISignature> _alreadySeen = new();
+        private readonly HashSet<IReferenceOrISignature> _alreadyHasToken = new();
         protected bool typeReferenceNeedsToken;
 
         internal ReferenceIndexerBase(EmitContext context)
@@ -45,7 +49,7 @@ namespace Microsoft.Cci
 
         public override void Visit(IFieldReference fieldReference)
         {
-            if (!_alreadySeen.Add(fieldReference))
+            if (!_alreadySeen.Add(new IReferenceOrISignature(fieldReference)))
             {
                 return;
             }
@@ -98,7 +102,7 @@ namespace Microsoft.Cci
                 }
             }
 
-            this.Visit(genericTypeInstanceReference.GenericType);
+            this.Visit(genericTypeInstanceReference.GetGenericType(Context));
             this.Visit(genericTypeInstanceReference.GetGenericArguments(Context));
         }
 
@@ -124,7 +128,7 @@ namespace Microsoft.Cci
                 return;
             }
 
-            if (!_alreadySeen.Add(methodReference))
+            if (!_alreadySeen.Add(new IReferenceOrISignature(methodReference)))
             {
                 return;
             }
@@ -141,20 +145,8 @@ namespace Microsoft.Cci
             }
 
             this.Visit((ITypeMemberReference)methodReference);
-            ISpecializedMethodReference specializedMethodReference = methodReference.AsSpecializedMethodReference;
-            if (specializedMethodReference != null)
-            {
-                IMethodReference unspecializedMethodReference = specializedMethodReference.UnspecializedVersion;
-                this.Visit(unspecializedMethodReference.GetType(Context));
-                this.Visit(unspecializedMethodReference.GetParameters(Context));
-                this.Visit(unspecializedMethodReference.ReturnValueCustomModifiers);
-            }
-            else
-            {
-                this.Visit(methodReference.GetType(Context));
-                this.Visit(methodReference.GetParameters(Context));
-                this.Visit(methodReference.ReturnValueCustomModifiers);
-            }
+
+            VisitSignature(methodReference.AsSpecializedMethodReference?.UnspecializedVersion ?? methodReference);
 
             if (methodReference.AcceptsExtraArguments)
             {
@@ -164,9 +156,17 @@ namespace Microsoft.Cci
             ReserveMethodToken(methodReference);
         }
 
+        public void VisitSignature(ISignature signature)
+        {
+            this.Visit(signature.GetType(Context));
+            this.Visit(signature.GetParameters(Context));
+            this.Visit(signature.RefCustomModifiers);
+            this.Visit(signature.ReturnValueCustomModifiers);
+        }
+
         protected abstract void ReserveMethodToken(IMethodReference methodReference);
 
-        public override abstract void Visit(CommonPEModuleBuilder module);
+        public abstract override void Visit(CommonPEModuleBuilder module);
 
         public override void Visit(IModuleReference moduleReference)
         {
@@ -178,11 +178,11 @@ namespace Microsoft.Cci
 
         protected abstract void RecordModuleReference(IModuleReference moduleReference);
 
-        public override abstract void Visit(IPlatformInvokeInformation platformInvokeInformation);
+        public abstract override void Visit(IPlatformInvokeInformation platformInvokeInformation);
 
         public override void Visit(INamespaceTypeReference namespaceTypeReference)
         {
-            if (!this.typeReferenceNeedsToken && namespaceTypeReference.TypeCode(Context) != PrimitiveTypeCode.NotPrimitive)
+            if (!this.typeReferenceNeedsToken && namespaceTypeReference.TypeCode != PrimitiveTypeCode.NotPrimitive)
             {
                 return;
             }
@@ -279,7 +279,7 @@ namespace Microsoft.Cci
         {
             VisitTypeDefinitionNoMembers(typeDefinition);
 
-            this.Visit(typeDefinition.Events);
+            this.Visit(typeDefinition.GetEvents(Context));
             this.Visit(typeDefinition.GetFields(Context));
             this.Visit(typeDefinition.GetMethods(Context));
             this.VisitNestedTypes(typeDefinition.GetNestedTypes(Context));
@@ -370,14 +370,14 @@ namespace Microsoft.Cci
                 }
                 else if (current is IPointerTypeReference)
                 {
-                    // The target type is itself an pointer type, and we must visit *its* target type.
+                    // The target type is itself a pointer type, and we must visit *its* target type.
                     // Iterate rather than recursing.
                     current = ((IPointerTypeReference)current).GetTargetType(Context);
                     continue;
                 }
                 else
                 {
-                    // The target type is not an pointer type and we must visit its children.
+                    // The target type is not a pointer type and we must visit its children.
                     // Dispatch the type in order to visit its children.
                     DispatchAsReference(current);
                     return;
@@ -396,7 +396,7 @@ namespace Microsoft.Cci
         // Returns true if we need to look at the children, false otherwise.
         private bool VisitTypeReference(ITypeReference typeReference)
         {
-            if (!_alreadySeen.Add(typeReference))
+            if (!_alreadySeen.Add(new IReferenceOrISignature(typeReference)))
             {
                 if (!this.typeReferenceNeedsToken)
                 {
@@ -404,7 +404,7 @@ namespace Microsoft.Cci
                 }
 
                 this.typeReferenceNeedsToken = false;
-                if (!_alreadyHasToken.Add(typeReference))
+                if (!_alreadyHasToken.Add(new IReferenceOrISignature(typeReference)))
                 {
                     return false;
                 }
@@ -416,19 +416,19 @@ namespace Microsoft.Cci
 
             INestedTypeReference/*?*/ nestedTypeReference = typeReference.AsNestedTypeReference;
             if (this.typeReferenceNeedsToken || nestedTypeReference != null ||
-              (typeReference.TypeCode(Context) == PrimitiveTypeCode.NotPrimitive && typeReference.AsNamespaceTypeReference != null))
+              (typeReference.TypeCode == PrimitiveTypeCode.NotPrimitive && typeReference.AsNamespaceTypeReference != null))
             {
                 ISpecializedNestedTypeReference/*?*/ specializedNestedTypeReference = nestedTypeReference?.AsSpecializedNestedTypeReference;
                 if (specializedNestedTypeReference != null)
                 {
-                    INestedTypeReference unspecializedNestedTypeReference = specializedNestedTypeReference.UnspecializedVersion;
-                    if (_alreadyHasToken.Add(unspecializedNestedTypeReference))
+                    INestedTypeReference unspecializedNestedTypeReference = specializedNestedTypeReference.GetUnspecializedVersion(Context);
+                    if (_alreadyHasToken.Add(new IReferenceOrISignature(unspecializedNestedTypeReference)))
                     {
                         RecordTypeReference(unspecializedNestedTypeReference);
                     }
                 }
 
-                if (this.typeReferenceNeedsToken && _alreadyHasToken.Add(typeReference))
+                if (this.typeReferenceNeedsToken && _alreadyHasToken.Add(new IReferenceOrISignature(typeReference)))
                 {
                     RecordTypeReference(typeReference);
                 }
@@ -451,11 +451,6 @@ namespace Microsoft.Cci
 
             this.typeReferenceNeedsToken = false;
             return true;
-        }
-
-        public override void Visit(IManagedPointerTypeReference managedPointerTypeReference)
-        {
-            Debug.Assert(false, "Unexpected ref type!");
         }
     }
 }

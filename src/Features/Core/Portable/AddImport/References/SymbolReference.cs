@@ -1,28 +1,37 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CodeActions;
+using Microsoft.CodeAnalysis.Tags;
+using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
-namespace Microsoft.CodeAnalysis.CodeFixes.AddImport
+namespace Microsoft.CodeAnalysis.AddImport
 {
-    internal abstract partial class AbstractAddImportCodeFixProvider<TSimpleNameSyntax>
+    internal abstract partial class AbstractAddImportFeatureService<TSimpleNameSyntax>
     {
         private abstract partial class SymbolReference : Reference
         {
             public readonly SymbolResult<INamespaceOrTypeSymbol> SymbolResult;
 
-            public SymbolReference(AbstractAddImportCodeFixProvider<TSimpleNameSyntax> provider, SymbolResult<INamespaceOrTypeSymbol> symbolResult)
+            protected abstract bool ShouldAddWithExistingImport(Document document);
+
+            public SymbolReference(
+                AbstractAddImportFeatureService<TSimpleNameSyntax> provider,
+                SymbolResult<INamespaceOrTypeSymbol> symbolResult)
                 : base(provider, new SearchResult(symbolResult))
             {
-                this.SymbolResult = symbolResult;
+                SymbolResult = symbolResult;
             }
 
             protected abstract ImmutableArray<string> GetTags(Document document);
-            protected abstract bool CheckForExistingImport(Project project);
 
             public override bool Equals(object obj)
             {
@@ -32,83 +41,96 @@ namespace Microsoft.CodeAnalysis.CodeFixes.AddImport
                     return false;
                 }
 
-                var name1 = this.SymbolResult.DesiredName;
+                var name1 = SymbolResult.DesiredName;
                 var name2 = (obj as SymbolReference)?.SymbolResult.DesiredName;
                 return StringComparer.Ordinal.Equals(name1, name2);
             }
 
             public override int GetHashCode()
-            {
-                return Hash.Combine(this.SymbolResult.DesiredName, base.GetHashCode());
-            }
+                => Hash.Combine(SymbolResult.DesiredName, base.GetHashCode());
 
-            private async Task<CodeActionOperation> GetOperationAsync(
-                Document document, SyntaxNode node, bool placeSystemNamespaceFirst,
+            private async Task<ImmutableArray<TextChange>> GetTextChangesAsync(
+                Document document, SyntaxNode contextNode,
+                bool placeSystemNamespaceFirst, bool allowInHiddenRegions, bool hasExistingImport,
                 CancellationToken cancellationToken)
             {
-                var newDocument = await UpdateDocumentAsync(document, node, placeSystemNamespaceFirst, cancellationToken).ConfigureAwait(false);
-                var updatedSolution = GetUpdatedSolution(newDocument);
-
-                var operation = new ApplyChangesOperation(updatedSolution);
-                return operation;
-            }
-
-            protected virtual Solution GetUpdatedSolution(Document newDocument)
-                => newDocument.Project.Solution;
-
-            private Task<Document> UpdateDocumentAsync(
-                Document document, SyntaxNode contextNode, bool placeSystemNamespaceFirst, CancellationToken cancellationToken)
-            {
-                ReplaceNameNode(ref contextNode, ref document, cancellationToken);
-
                 // Defer to the language to add the actual import/using.
-                return provider.AddImportAsync(contextNode,
-                    this.SymbolResult.Symbol, document,
-                    placeSystemNamespaceFirst, cancellationToken);
+                if (hasExistingImport)
+                {
+                    return ImmutableArray<TextChange>.Empty;
+                }
+
+                (var newContextNode, var newDocument) = await ReplaceNameNodeAsync(
+                    contextNode, document, cancellationToken).ConfigureAwait(false);
+
+                var updatedDocument = await provider.AddImportAsync(
+                    newContextNode, SymbolResult.Symbol, newDocument,
+                    placeSystemNamespaceFirst, allowInHiddenRegions, cancellationToken).ConfigureAwait(false);
+
+                var cleanedDocument = await CodeAction.CleanupDocumentAsync(
+                    updatedDocument, cancellationToken).ConfigureAwait(false);
+
+                var textChanges = await cleanedDocument.GetTextChangesAsync(
+                    document, cancellationToken).ConfigureAwait(false);
+
+                return textChanges.ToImmutableArray();
             }
 
-            public override async Task<CodeAction> CreateCodeActionAsync(
+            public sealed override async Task<AddImportFixData> TryGetFixDataAsync(
                 Document document, SyntaxNode node,
-                bool placeSystemNamespaceFirst, CancellationToken cancellationToken)
+                bool placeSystemNamespaceFirst, bool allowInHiddenRegions, CancellationToken cancellationToken)
             {
                 var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-                string description = TryGetDescription(document, node, semanticModel, cancellationToken);
+                var (description, hasExistingImport) = GetDescription(document, node, semanticModel, cancellationToken);
                 if (description == null)
                 {
                     return null;
                 }
 
-                if (!this.SearchResult.DesiredNameMatchesSourceName(document))
+                if (hasExistingImport && !ShouldAddWithExistingImport(document))
                 {
-                    // The name is going to change.  Make it clear in the description that 
-                    // this is going to happen.
-                    description = $"{this.SearchResult.DesiredName} - {description}";
+                    return null;
                 }
 
-                var getOperation = new AsyncLazy<CodeActionOperation>(
-                    c => this.GetOperationAsync(document, node, placeSystemNamespaceFirst, c),
-                    cacheResult: true);
+                var isFuzzy = !SearchResult.DesiredNameMatchesSourceName(document);
+                var tags = GetTags(document);
+                if (isFuzzy)
+                {
+                    // The name is going to change.  Make it clear in the description that this is
+                    // going to happen.
+                    description = $"{SearchResult.DesiredName} - {description}";
 
-                return new SymbolReferenceCodeAction(
-                    description, GetTags(document), GetPriority(document),
-                    getOperation,
-                    this.GetIsApplicableCheck(document.Project));
+                    // if we were a fuzzy match, and we didn't have any glyph to show, then add the
+                    // namespace-glyph to this item. This helps indicate that not only are we fixing
+                    // the spelling of this name we are *also* adding a namespace.  This helps as we
+                    // have gotten feedback in the past that the 'using/import' addition was
+                    // unexpected.
+                    if (tags.IsDefaultOrEmpty)
+                    {
+                        tags = WellKnownTagArrays.Namespace;
+                    }
+                }
+
+                var textChanges = await GetTextChangesAsync(
+                    document, node, placeSystemNamespaceFirst, allowInHiddenRegions, hasExistingImport, cancellationToken).ConfigureAwait(false);
+
+                return GetFixData(
+                    document, textChanges, description,
+                    tags, GetPriority(document));
             }
+
+            protected abstract AddImportFixData GetFixData(
+                Document document, ImmutableArray<TextChange> textChanges,
+                string description, ImmutableArray<string> tags, CodeActionPriority priority);
 
             protected abstract CodeActionPriority GetPriority(Document document);
 
-            protected virtual Func<Workspace, bool> GetIsApplicableCheck(Project project)
-            {
-                return null;
-            }
-
-            protected virtual string TryGetDescription(
-                Document document, SyntaxNode node, 
+            protected virtual (string description, bool hasExistingImport) GetDescription(
+                Document document, SyntaxNode node,
                 SemanticModel semanticModel, CancellationToken cancellationToken)
             {
-                return provider.TryGetDescription(
-                    document, SymbolResult.Symbol, semanticModel, node, 
-                    this.CheckForExistingImport(document.Project), cancellationToken);
+                return provider.GetDescription(
+                    document, SymbolResult.Symbol, semanticModel, node, cancellationToken);
             }
         }
     }

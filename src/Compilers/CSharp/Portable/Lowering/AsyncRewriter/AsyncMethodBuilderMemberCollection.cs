@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Diagnostics;
 using System.Linq;
@@ -74,6 +78,11 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// </summary>
         internal readonly PropertySymbol Task;
 
+        /// <summary>
+        /// True if generic method constraints should be checked at the call-site.
+        /// </summary>
+        internal readonly bool CheckGenericMethodConstraints;
+
         private AsyncMethodBuilderMemberCollection(
             NamedTypeSymbol builderType,
             TypeSymbol resultType,
@@ -84,7 +93,8 @@ namespace Microsoft.CodeAnalysis.CSharp
             MethodSymbol awaitUnsafeOnCompleted,
             MethodSymbol start,
             MethodSymbol setStateMachine,
-            PropertySymbol task)
+            PropertySymbol task,
+            bool checkGenericMethodConstraints)
         {
             BuilderType = builderType;
             ResultType = resultType;
@@ -96,11 +106,46 @@ namespace Microsoft.CodeAnalysis.CSharp
             Start = start;
             SetStateMachine = setStateMachine;
             Task = task;
+            CheckGenericMethodConstraints = checkGenericMethodConstraints;
         }
 
         internal static bool TryCreate(SyntheticBoundNodeFactory F, MethodSymbol method, TypeMap typeMap, out AsyncMethodBuilderMemberCollection collection)
         {
-            if (method.IsVoidReturningAsync())
+            if (method.IsIterator)
+            {
+                var builderType = F.WellKnownType(WellKnownType.System_Runtime_CompilerServices_AsyncIteratorMethodBuilder);
+                Debug.Assert((object)builderType != null);
+
+                TryGetBuilderMember<MethodSymbol>(
+                    F,
+                    WellKnownMember.System_Runtime_CompilerServices_AsyncIteratorMethodBuilder__Create,
+                    builderType,
+                    customBuilder: false,
+                    out MethodSymbol createBuilderMethod);
+
+                if (createBuilderMethod is null)
+                {
+                    collection = default;
+                    return false;
+                }
+
+                return TryCreate(
+                    F,
+                    customBuilder: false,
+                    builderType: builderType,
+                    resultType: F.SpecialType(SpecialType.System_Void),
+                    createBuilderMethod: createBuilderMethod,
+                    taskProperty: null,
+                    setException: null, // unused
+                    setResult: WellKnownMember.System_Runtime_CompilerServices_AsyncIteratorMethodBuilder__Complete, // AsyncIteratorMethodBuilder.Complete is the corresponding method to AsyncTaskMethodBuilder.SetResult
+                    awaitOnCompleted: WellKnownMember.System_Runtime_CompilerServices_AsyncIteratorMethodBuilder__AwaitOnCompleted,
+                    awaitUnsafeOnCompleted: WellKnownMember.System_Runtime_CompilerServices_AsyncIteratorMethodBuilder__AwaitUnsafeOnCompleted,
+                    start: WellKnownMember.System_Runtime_CompilerServices_AsyncIteratorMethodBuilder__MoveNext_T,
+                    setStateMachine: null, // unused
+                    collection: out collection);
+            }
+
+            if (method.IsAsyncReturningVoid())
             {
                 var builderType = F.WellKnownType(WellKnownType.System_Runtime_CompilerServices_AsyncVoidMethodBuilder);
                 Debug.Assert((object)builderType != null);
@@ -133,7 +178,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     collection: out collection);
             }
 
-            if (method.IsTaskReturningAsync(F.Compilation))
+            if (method.IsAsyncReturningTask(F.Compilation))
             {
                 var returnType = (NamedTypeSymbol)method.ReturnType;
                 NamedTypeSymbol builderType;
@@ -144,10 +189,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                 bool customBuilder = returnType.IsCustomTaskType(out builderArgument);
                 if (customBuilder)
                 {
-                    builderType = ValidateBuilderType(F, builderArgument, returnType.DeclaredAccessibility, isGeneric:false);
+                    builderType = ValidateBuilderType(F, builderArgument, returnType.DeclaredAccessibility, isGeneric: false);
                     if ((object)builderType != null)
                     {
-                        taskProperty = GetCustomTaskProperty(F, builderType);
+                        taskProperty = GetCustomTaskProperty(F, builderType, returnType);
                         createBuilderMethod = GetCustomCreateMethod(F, builderType);
                     }
                 }
@@ -191,10 +236,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                     collection: out collection);
             }
 
-            if (method.IsGenericTaskReturningAsync(F.Compilation))
+            if (method.IsAsyncReturningGenericTask(F.Compilation))
             {
                 var returnType = (NamedTypeSymbol)method.ReturnType;
-                var resultType = returnType.TypeArgumentsNoUseSiteDiagnostics.Single();
+                var resultType = returnType.TypeArgumentsWithAnnotationsNoUseSiteDiagnostics.Single().Type;
                 if (resultType.IsDynamic())
                 {
                     resultType = F.SpecialType(SpecialType.System_Object);
@@ -212,11 +257,11 @@ namespace Microsoft.CodeAnalysis.CSharp
                 bool customBuilder = returnType.IsCustomTaskType(out builderArgument);
                 if (customBuilder)
                 {
-                    builderType = ValidateBuilderType(F, builderArgument, returnType.DeclaredAccessibility, isGeneric:true);
+                    builderType = ValidateBuilderType(F, builderArgument, returnType.DeclaredAccessibility, isGeneric: true);
                     if ((object)builderType != null)
                     {
                         builderType = builderType.ConstructedFrom.Construct(resultType);
-                        taskProperty = GetCustomTaskProperty(F, builderType);
+                        taskProperty = GetCustomTaskProperty(F, builderType, returnType);
                         createBuilderMethod = GetCustomCreateMethod(F, builderType);
                     }
                 }
@@ -270,11 +315,11 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             if ((object)builderType != null &&
                  !builderType.IsErrorType() &&
-                 builderType.SpecialType != SpecialType.System_Void &&
+                 !builderType.IsVoidType() &&
                  builderType.DeclaredAccessibility == desiredAccessibility)
             {
                 bool isArityOk = isGeneric
-                                 ? builderType.IsUnboundGenericType && builderType.ContainingType?.IsGenericType != true
+                                 ? builderType.IsUnboundGenericType && builderType.ContainingType?.IsGenericType != true && builderType.Arity == 1
                                  : !builderType.IsGenericType;
                 if (isArityOk)
                 {
@@ -293,12 +338,12 @@ namespace Microsoft.CodeAnalysis.CSharp
             TypeSymbol resultType,
             MethodSymbol createBuilderMethod,
             PropertySymbol taskProperty,
-            WellKnownMember setException,
+            WellKnownMember? setException,
             WellKnownMember setResult,
             WellKnownMember awaitOnCompleted,
             WellKnownMember awaitUnsafeOnCompleted,
             WellKnownMember start,
-            WellKnownMember setStateMachine,
+            WellKnownMember? setStateMachine,
             out AsyncMethodBuilderMemberCollection collection)
         {
             MethodSymbol setExceptionMethod;
@@ -325,7 +370,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                     awaitUnsafeOnCompletedMethod,
                     startMethod,
                     setStateMachineMethod,
-                    taskProperty);
+                    taskProperty,
+                    checkGenericMethodConstraints: customBuilder);
 
                 return true;
             }
@@ -336,19 +382,25 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private static bool TryGetBuilderMember<TSymbol>(
             SyntheticBoundNodeFactory F,
-            WellKnownMember member,
+            WellKnownMember? member,
             NamedTypeSymbol builderType,
             bool customBuilder,
             out TSymbol symbol)
             where TSymbol : Symbol
         {
+            if (!member.HasValue)
+            {
+                symbol = null;
+                return true;
+            }
+
+            WellKnownMember memberValue = member.Value;
             if (customBuilder)
             {
-                var descriptor = WellKnownMembers.GetDescriptor(member);
-                // Should check constraints (see https://github.com/dotnet/roslyn/issues/12616).
+                var descriptor = WellKnownMembers.GetDescriptor(memberValue);
                 var sym = CSharpCompilation.GetRuntimeMember(
                     builderType.OriginalDefinition,
-                    ref descriptor,
+                    descriptor,
                     F.Compilation.WellKnownMemberSignatureComparer,
                     accessWithinOpt: null);
                 if ((object)sym != null)
@@ -359,7 +411,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
             else
             {
-                symbol = F.WellKnownMember(member, isOptional: true) as TSymbol;
+                symbol = F.WellKnownMember(memberValue, isOptional: true) as TSymbol;
                 if ((object)symbol != null)
                 {
                     symbol = (TSymbol)symbol.SymbolAsMember(builderType);
@@ -367,7 +419,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
             if ((object)symbol == null)
             {
-                var descriptor = WellKnownMembers.GetDescriptor(member);
+                var descriptor = WellKnownMembers.GetDescriptor(memberValue);
                 var diagnostic = new CSDiagnostic(
                     new CSDiagnosticInfo(ErrorCode.ERR_MissingPredefinedMember, (customBuilder ? (object)builderType : descriptor.DeclaringTypeMetadataName), descriptor.Name),
                     F.Syntax.Location);
@@ -396,7 +448,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     method.IsStatic &&
                     method.ParameterCount == 0 &&
                     !method.IsGenericMethod &&
-                    method.ReturnType == builderType) 
+                    method.ReturnType.Equals(builderType, TypeCompareKind.AllIgnoreOptions))
                 {
                     return method;
                 }
@@ -407,7 +459,8 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private static PropertySymbol GetCustomTaskProperty(
             SyntheticBoundNodeFactory F,
-            NamedTypeSymbol builderType)
+            NamedTypeSymbol builderType,
+            NamedTypeSymbol returnType)
         {
             const string propertyName = "Task";
             var members = builderType.GetMembers(propertyName);
@@ -422,6 +475,15 @@ namespace Microsoft.CodeAnalysis.CSharp
                     !property.IsStatic &&
                     (property.ParameterCount == 0))
                 {
+                    if (!property.Type.Equals(returnType, TypeCompareKind.AllIgnoreOptions))
+                    {
+                        var badTaskProperty = new CSDiagnostic(
+                            new CSDiagnosticInfo(ErrorCode.ERR_BadAsyncMethodBuilderTaskProperty, builderType, returnType, property.Type),
+                            F.Syntax.Location);
+                        F.Diagnostics.Add(badTaskProperty);
+                        return null;
+                    }
+
                     return property;
                 }
             }

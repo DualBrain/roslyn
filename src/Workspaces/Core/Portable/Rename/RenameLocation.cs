@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using Microsoft.CodeAnalysis.FindSymbols;
@@ -16,7 +18,7 @@ namespace Microsoft.CodeAnalysis.Rename
         public readonly TextSpan ContainingLocationForStringOrComment;
         public readonly bool IsWrittenTo;
 
-        public bool IsRenameInStringOrComment => ContainingLocationForStringOrComment != default(TextSpan);
+        public bool IsRenameInStringOrComment => ContainingLocationForStringOrComment != default;
 
         public RenameLocation(
             Location location,
@@ -25,7 +27,7 @@ namespace Microsoft.CodeAnalysis.Rename
             bool isRenamableAliasUsage = false,
             bool isRenamableAccessor = false,
             bool isWrittenTo = false,
-            TextSpan containingLocationForStringOrComment = default(TextSpan))
+            TextSpan containingLocationForStringOrComment = default)
         {
             Location = location;
             DocumentId = documentId;
@@ -44,26 +46,16 @@ namespace Microsoft.CodeAnalysis.Rename
         }
 
         public bool Equals(RenameLocation other)
-        {
-            return Location == other.Location;
-        }
+            => Location == other.Location;
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is RenameLocation)
-            {
-                return Equals((RenameLocation)obj);
-            }
-            else
-            {
-                return false;
-            }
+            return obj is RenameLocation loc &&
+                   Equals(loc);
         }
 
         public override int GetHashCode()
-        {
-            return Location.GetHashCode();
-        }
+            => Location.GetHashCode();
 
         internal static bool ShouldRename(RenameLocation location)
             => ShouldRename(location.CandidateReason);

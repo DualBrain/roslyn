@@ -1,6 +1,11 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Immutable;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Microsoft.CodeAnalysis.SymbolSearch
@@ -11,13 +16,13 @@ namespace Microsoft.CodeAnalysis.SymbolSearch
     /// </summary>
     internal interface ISymbolSearchUpdateEngine
     {
-        Task UpdateContinuouslyAsync(string sourceName, string localSettingsDirectory);
+        ValueTask UpdateContinuouslyAsync(string sourceName, string localSettingsDirectory, ISymbolSearchLogService logService, CancellationToken cancellationToken);
 
-        Task<ImmutableArray<PackageWithTypeResult>> FindPackagesWithTypeAsync(
-            string source, string name, int arity);
-        Task<ImmutableArray<PackageWithAssemblyResult>> FindPackagesWithAssemblyAsync(
-            string source, string assemblyName);
-        Task<ImmutableArray<ReferenceAssemblyWithTypeResult>> FindReferenceAssembliesWithTypeAsync(
-            string name, int arity);
+        ValueTask<ImmutableArray<PackageWithTypeResult>> FindPackagesWithTypeAsync(
+            string source, string name, int arity, CancellationToken cancellationToken);
+        ValueTask<ImmutableArray<PackageWithAssemblyResult>> FindPackagesWithAssemblyAsync(
+            string source, string assemblyName, CancellationToken cancellationToken);
+        ValueTask<ImmutableArray<ReferenceAssemblyWithTypeResult>> FindReferenceAssembliesWithTypeAsync(
+            string name, int arity, CancellationToken cancellationToken);
     }
 }

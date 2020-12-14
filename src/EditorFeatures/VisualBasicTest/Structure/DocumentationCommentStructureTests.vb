@@ -1,4 +1,6 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports Microsoft.CodeAnalysis.Structure
 Imports Microsoft.CodeAnalysis.VisualBasic.Structure
@@ -90,7 +92,7 @@ End Class
 "
 
             Await VerifyBlockSpansAsync(code,
-                Region("span", "''' <summary> Hello VB!", autoCollapse:=True))
+                Region("span", "''' <summary>Hello VB!", autoCollapse:=True))
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Outlining)>
@@ -102,7 +104,7 @@ End Class
 "
 
             Await VerifyBlockSpansAsync(code,
-                Region("span", "''' <summary> Hello VB!", autoCollapse:=True))
+                Region("span", "''' <summary>Hello VB!", autoCollapse:=True))
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Outlining)>
@@ -151,7 +153,24 @@ End Class
 "
 
             Await VerifyBlockSpansAsync(code,
-                Region("span", "''' <summary> Summary with SeeClass , SeeAlsoClass , Nothing , T , t , and not-supported .", autoCollapse:=True))
+                Region("span", "''' <summary> Summary with SeeClass, SeeAlsoClass, Nothing, T, t, and not-supported.", autoCollapse:=True))
+        End Function
+
+        <WorkItem(402822, "https://devdiv.visualstudio.com/DevDiv/_workitems?id=402822")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Outlining)>
+        Public Async Function TestSummaryWithPunctuation() As Task
+            Const code = "
+class C
+    {|span:''' $$<summary>
+    ''' The main entrypoint for <see cref=""Program""/>.
+    ''' </summary>
+    ''' <param name=""args""></param>|}
+    Sub Main()
+    End Sub
+end class"
+
+            Await VerifyBlockSpansAsync(code,
+                Region("span", "''' <summary> The main entrypoint for Program.", autoCollapse:=True))
         End Function
     End Class
 End Namespace

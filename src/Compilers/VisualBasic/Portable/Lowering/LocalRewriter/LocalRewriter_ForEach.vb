@@ -1,8 +1,11 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
 Imports System.Runtime.InteropServices
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
@@ -229,7 +232,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             If Instrument(node) Then
                 ' first sequence point to highlight the for each statement
-                boundCollectionAssignment = _instrumenter.InstrumentForEachLoopInitialization(node, boundCollectionAssignment)
+                boundCollectionAssignment = _instrumenterOpt.InstrumentForEachLoopInitialization(node, boundCollectionAssignment)
             End If
 
             statements.Add(boundCollectionAssignment)
@@ -296,7 +299,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                              type:=elementType)
                 Else
                     boundCurrent = New BoundBadExpression(syntaxNode, LookupResultKind.NotReferencable, ImmutableArray(Of Symbol).Empty,
-                                                          ImmutableArray.Create(Of BoundNode)(boundIndex.MakeRValue()), elementType, hasErrors:=True)
+                                                          ImmutableArray.Create(Of BoundExpression)(boundIndex.MakeRValue()), elementType, hasErrors:=True)
                 End If
             End If
             ' now we know the bound node for the current value; add it to the replacement map to get inserted into the
@@ -435,7 +438,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             If Instrument(forEachStatement) Then
-                epilogue = _instrumenter.InstrumentForEachLoopEpilogue(forEachStatement, epilogue)
+                epilogue = _instrumenterOpt.InstrumentForEachLoopEpilogue(forEachStatement, epilogue)
             End If
 
             If epilogue IsNot Nothing Then
@@ -577,7 +580,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             If Instrument(node) Then
                 ' first sequence point; highlight for each statement
-                boundEnumeratorAssignment = _instrumenter.InstrumentForEachLoopInitialization(node, boundEnumeratorAssignment)
+                boundEnumeratorAssignment = _instrumenterOpt.InstrumentForEachLoopInitialization(node, boundEnumeratorAssignment)
             End If
 
             Debug.Assert(enumeratorInfo.EnumeratorPlaceholder IsNot Nothing)
@@ -614,7 +617,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             If Instrument(node) Then
-                bodyEpilogue = _instrumenter.InstrumentForEachLoopEpilogue(node, bodyEpilogue)
+                bodyEpilogue = _instrumenterOpt.InstrumentForEachLoopEpilogue(node, bodyEpilogue)
             End If
 
             rewrittenBodyBlock = AppendToBlock(rewrittenBodyBlock, bodyEpilogue)
@@ -713,8 +716,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             If Not TryGetSpecialMember(disposeMethod, SpecialMember.System_IDisposable__Dispose, syntaxNode) Then
                 Return New BoundBadExpression(syntaxNode, LookupResultKind.NotReferencable, ImmutableArray(Of Symbol).Empty,
                                               If(rewrittenCondition IsNot Nothing,
-                                                 ImmutableArray.Create(Of BoundNode)(rewrittenBoundLocal, rewrittenCondition),
-                                                 ImmutableArray.Create(Of BoundNode)(rewrittenBoundLocal)),
+                                                 ImmutableArray.Create(rewrittenBoundLocal, rewrittenCondition),
+                                                 ImmutableArray.Create(Of BoundExpression)(rewrittenBoundLocal)),
                                               ErrorTypeSymbol.UnknownResultType, hasErrors:=True).ToStatement()
             End If
 
@@ -735,7 +738,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 ' there's no need to cast the enumerator if it's known to be a value type, because they are implicitly
                 ' sealed the methods cannot ever be overridden.
 
-                ' this will be an constrained call, because the receiver is a value type and the method is an
+                ' this will be a constrained call, because the receiver is a value type and the method is an
                 ' interface method: 
                 ' e.Dispose()    ' constrained call
                 boundCall = New BoundCall(syntaxNode,

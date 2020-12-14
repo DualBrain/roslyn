@@ -9,15 +9,22 @@
 .vs/
 
 # Build results
-[Bb]inaries/
+[Aa]rtifacts/
 [Dd]ebug/
 [Rr]elease/
+[Bb]inaries/
 x64/
 [Bb]in/
 [Oo]bj/
+.dotnet/
+.tools/
+.packages/
 
 # Enable "build/" folder in the NuGet Packages folder since NuGet packages use it for MSBuild targets
 !packages/*/build/
+
+# Debug artifacts
+launchSettings.json
 
 # Prevent accidental re-checkin of NuGet.exe
 NuGet.exe
@@ -38,6 +45,7 @@ UnitTestResults.html
 *.nuget.props
 *.nuget.targets
 project.lock.json
+msbuild.binlog
 *.project.lock.json
 
 *_i.c
@@ -88,6 +96,7 @@ ipch/
 # ReSharper is a .NET coding add-in
 _ReSharper*/
 *.[Rr]e[Ss]harper
+*.DotSettings
 
 # TeamCity is a build add-in
 _TeamCity*
@@ -177,5 +186,8 @@ $RECYCLE.BIN/
 # Mac desktop service store files
 .DS_Store
 
-# Visual Studio Code
-.vscode/
+# JetBrains Rider
+.idea/
+
+# WPF temp projects
+*wpftmp.*

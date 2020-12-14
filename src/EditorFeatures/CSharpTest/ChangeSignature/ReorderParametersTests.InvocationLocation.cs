@@ -1,7 +1,12 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
 using Xunit;
 
@@ -18,7 +23,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.ChangeSignature
 using System;
 class MyClass
 {
-    public void $$Foo(int x, string y)
+    public void $$Goo(int x, string y)
     {
     }
 }";
@@ -27,12 +32,13 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -42,7 +48,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, $$string y)
+    public void Goo(int x, $$string y)
     {
     }
 }";
@@ -51,12 +57,13 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 1);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -66,7 +73,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)$$
+    public void Goo(int x, string y)$$
     {
     }
 }";
@@ -75,7 +82,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
     }
 }";
@@ -90,7 +97,7 @@ class MyClass
 using System;
 class MyClass
 {
-    $$public void Foo(int x, string y)
+    $$public void Goo(int x, string y)
     {
     }
 }";
@@ -99,7 +106,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
     }
 }";
@@ -165,29 +172,36 @@ class C
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
-        public async Task ReorderMethodParameters_InvokeInMethodBody()
+        public async Task ReorderMethodParameters_InvokeInMethodBody_ViaCommand()
         {
             var markup = @"
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         $$
     }
 }";
-            var permutation = new[] { 1, 0 };
-            var updatedCode = @"
+
+            await TestChangeSignatureViaCommandAsync(
+                LanguageNames.CSharp, markup, expectedSuccess: false);
+        }
+
+        [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
+        public async Task ReorderMethodParameters_InvokeInMethodBody_ViaSmartTag()
+        {
+            var markup = @"
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(int x, string y)
     {
-        
+        [||]
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestMissingAsync(markup);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -197,7 +211,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         $$Bar(x, y);
     }
@@ -211,7 +225,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar(y, x);
     }
@@ -231,7 +245,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         $$Bar(x, y);
     }
@@ -245,7 +259,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar(y, x);
     }
@@ -265,7 +279,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar($$Baz(x, y), y);
     }
@@ -284,7 +298,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar(Baz(y, x), y);
     }
@@ -309,7 +323,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar$$(Baz(x, y), y);
     }
@@ -328,7 +342,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar(y, Baz(x, y));
     }
@@ -353,7 +367,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar(Baz(x, y), $$y);
     }
@@ -372,7 +386,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         Bar(y, Baz(x, y));
     }
@@ -533,7 +547,8 @@ class Program
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -559,7 +574,8 @@ class Program
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 1);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -585,7 +601,8 @@ class Program
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -683,7 +700,8 @@ class Program
     }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         #endregion
@@ -715,7 +733,8 @@ public class C
     public delegate void D(int y, int x);
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -760,7 +779,7 @@ class Test
 using System;
 class MyClass
 {
-    public void [||]Foo(int x, string y)
+    public void [||]Goo(int x, string y)
     {
     }
 }";
@@ -769,7 +788,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
     }
 }";
@@ -783,7 +802,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(int x, string y)
+    public void Goo(int x, string y)
     {
         [||]
     }
@@ -829,14 +848,14 @@ class Program
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
-        public async Task ReorderMethodParameters_CodeRefactoring_AtCallSite()
+        public async Task ReorderMethodParameters_CodeRefactoring_AtCallSite_ViaCommand()
         {
             var markup = @"
 class Program
 {
     void M(int x, int y)
     {
-        M([|5|], 6);
+        M($$5, 6);
     }
 }";
             var permutation = new[] { 1, 0 };
@@ -848,8 +867,25 @@ class Program
         M(6, 5);
     }
 }";
-            await TestChangeSignatureViaCodeActionAsync(markup, expectedCodeAction: true, updatedSignature: permutation, expectedCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(
+                LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode);
         }
+
+        [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
+        public async Task ReorderMethodParameters_CodeRefactoring_AtCallSite_ViaCodeAction()
+        {
+            var markup = @"
+class Program
+{
+    void M(int x, int y)
+    {
+        M([||]5, 6);
+    }
+}";
+            await TestMissingAsync(markup);
+        }
+
         #endregion
     }
 }

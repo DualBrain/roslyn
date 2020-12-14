@@ -1,16 +1,20 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Threading
-Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis
+Imports Microsoft.CodeAnalysis.Editor.Shared.Utilities
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Extensions
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
 Imports Microsoft.CodeAnalysis.Formatting
+Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.VisualStudio.LanguageServices.CSharp.Snippets
 Imports Microsoft.VisualStudio.Text.Projection
 Imports Roslyn.Test.Utilities
 
 Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.Snippets
+    <[UseExportProvider]>
     Public Class CSharpSnippetExpansionClientTests
 
         <WpfFact, Trait(Traits.Feature, Traits.Features.Snippets)>
@@ -163,6 +167,7 @@ using G=   H.I;
         End Function
 
         <WpfFact, Trait(Traits.Feature, Traits.Features.Snippets)>
+        <WorkItem(44423, "https://github.com/dotnet/roslyn/issues/44423")>
         Public Async Function TestAddImport_BadNamespaceGetsAdded() As Task
             Dim originalCode = ""
             Dim namespacesToAdd = {"$system"}
@@ -172,7 +177,7 @@ using G=   H.I;
         End Function
 
         <WpfFact, Trait(Traits.Feature, Traits.Features.Snippets)>
-        Public Async Function TestSnippetFormatting_ProjectionBuffer_FullyInSubjectBuffer() As Task
+        Public Sub TestSnippetFormatting_ProjectionBuffer_FullyInSubjectBuffer()
             Dim workspaceXmlWithSubjectBufferDocument =
 <Workspace>
     <Project Language=<%= LanguageNames.CSharp %> CommonReferences="true">
@@ -198,11 +203,11 @@ using G=   H.I;
         } 
 &lt;/div&gt;</SurfaceBuffer>
 
-            Await TestProjectionFormattingAsync(workspaceXmlWithSubjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
-        End Function
+            TestProjectionFormatting(workspaceXmlWithSubjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
+        End Sub
 
         <WpfFact, Trait(Traits.Feature, Traits.Features.Snippets)>
-        Public Async Function TestSnippetFormatting_ProjectionBuffer_ExpandedIntoSurfaceBuffer() As Task
+        Public Sub TestSnippetFormatting_ProjectionBuffer_ExpandedIntoSurfaceBuffer()
             Dim workspaceXmlWithSubjectBufferDocument =
 <Workspace>
     <Project Language=<%= LanguageNames.CSharp %> CommonReferences="true">
@@ -228,11 +233,11 @@ using G=   H.I;
 }
 &lt;/div&gt;</SurfaceBuffer>
 
-            Await TestProjectionFormattingAsync(workspaceXmlWithSubjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
-        End Function
+            TestProjectionFormatting(workspaceXmlWithSubjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
+        End Sub
 
         <WpfFact, Trait(Traits.Feature, Traits.Features.Snippets)>
-        Public Async Function TestSnippetFormatting_ProjectionBuffer_FullyInSurfaceBuffer() As Task
+        Public Sub TestSnippetFormatting_ProjectionBuffer_FullyInSurfaceBuffer()
             Dim workspaceXmlWithSubjectBufferDocument =
 <Workspace>
     <Project Language=<%= LanguageNames.CSharp %> CommonReferences="true">
@@ -258,28 +263,19 @@ using G=   H.I;
 }
 &lt;/div&gt;</SurfaceBuffer>
 
-            Await TestProjectionFormattingAsync(workspaceXmlWithSubjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
-        End Function
+            TestProjectionFormatting(workspaceXmlWithSubjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
+        End Sub
 
-        <WpfFact, WorkItem(4652, "https://github.com/dotnet/roslyn/issues/4652")>
+        Public Sub TestSnippetFormatting_TabSize_3()
+            TestFormattingWithTabSize(3)
+        End Sub
+
+        <WpfTheory, WorkItem(4652, "https://github.com/dotnet/roslyn/issues/4652")>
         <Trait(Traits.Feature, Traits.Features.Snippets)>
-        Public Async Function TestSnippetFormatting_TabSize_3() As Task
-            Await TestFormattingWithTabSizeAsync(3)
-        End Function
-
-        <WpfFact, WorkItem(4652, "https://github.com/dotnet/roslyn/issues/4652")>
-        <Trait(Traits.Feature, Traits.Features.Snippets)>
-        Public Async Function TestSnippetFormatting_TabSize_4() As Task
-            Await TestFormattingWithTabSizeAsync(4)
-        End Function
-
-        <WpfFact, WorkItem(4652, "https://github.com/dotnet/roslyn/issues/4652")>
-        <Trait(Traits.Feature, Traits.Features.Snippets)>
-        Public Async Function TestSnippetFormatting_TabSize_5() As Task
-            Await TestFormattingWithTabSizeAsync(5)
-        End Function
-
-        Public Async Function TestFormattingWithTabSizeAsync(tabSize As Integer) As Tasks.Task
+        <InlineData(3)>
+        <InlineData(4)>
+        <InlineData(5)>
+        Public Sub TestFormattingWithTabSize(tabSize As Integer)
             Dim workspaceXml =
 <Workspace>
     <Project Language=<%= LanguageNames.CSharp %> CommonReferences="true">
@@ -305,43 +301,44 @@ using G=   H.I;
 	}
 }</Test>
 
-            Using workspace = Await TestWorkspace.CreateAsync(workspaceXml)
+            Using workspace = TestWorkspace.Create(workspaceXml, openDocuments:=False)
                 Dim document = workspace.Documents.Single()
 
-                workspace.Options = workspace.Options _
+                workspace.TryApplyChanges(workspace.CurrentSolution.WithOptions(workspace.Options _
                     .WithChangedOption(FormattingOptions.UseTabs, document.Project.Language, True) _
                     .WithChangedOption(FormattingOptions.TabSize, document.Project.Language, tabSize) _
-                    .WithChangedOption(FormattingOptions.IndentationSize, document.Project.Language, tabSize)
+                    .WithChangedOption(FormattingOptions.IndentationSize, document.Project.Language, tabSize)))
 
                 Dim snippetExpansionClient = New SnippetExpansionClient(
+                    workspace.ExportProvider.GetExportedValue(Of IThreadingContext),
                     Guids.CSharpLanguageServiceId,
                     document.GetTextView(),
-                    document.TextBuffer,
+                    document.GetTextBuffer(),
                     Nothing)
 
                 SnippetExpansionClientTestsHelper.TestFormattingAndCaretPosition(snippetExpansionClient, document, expectedResult, tabSize * 3)
             End Using
-        End Function
+        End Sub
 
-        Public Async Function TestProjectionFormattingAsync(workspaceXmlWithSubjectBufferDocument As XElement, surfaceBufferDocumentXml As XElement, expectedSurfaceBuffer As XElement) As Tasks.Task
-            Using workspace = Await TestWorkspace.CreateAsync(workspaceXmlWithSubjectBufferDocument)
+        Public Sub TestProjectionFormatting(workspaceXmlWithSubjectBufferDocument As XElement, surfaceBufferDocumentXml As XElement, expectedSurfaceBuffer As XElement)
+            Using workspace = TestWorkspace.Create(workspaceXmlWithSubjectBufferDocument)
                 Dim subjectBufferDocument = workspace.Documents.Single()
 
                 Dim surfaceBufferDocument = workspace.CreateProjectionBufferDocument(
                     surfaceBufferDocumentXml.NormalizedValue,
                     {subjectBufferDocument},
-                    LanguageNames.VisualBasic,
                     options:=ProjectionBufferOptions.WritableLiteralSpans)
 
                 Dim snippetExpansionClient = New SnippetExpansionClient(
+                    workspace.ExportProvider.GetExportedValue(Of IThreadingContext),
                     Guids.CSharpLanguageServiceId,
                     surfaceBufferDocument.GetTextView(),
-                    subjectBufferDocument.TextBuffer,
+                    subjectBufferDocument.GetTextBuffer(),
                     Nothing)
 
-                SnippetExpansionClientTestsHelper.TestProjectionBuffer(snippetExpansionClient, subjectBufferDocument, surfaceBufferDocument, expectedSurfaceBuffer)
+                SnippetExpansionClientTestsHelper.TestProjectionBuffer(snippetExpansionClient, surfaceBufferDocument, expectedSurfaceBuffer)
             End Using
-        End Function
+        End Sub
 
         Private Async Function TestSnippetAddImportsAsync(
                 markupCode As String,
@@ -370,8 +367,9 @@ using G=   H.I;
                                                    </Import>)
             Next
 
-            Using workspace = Await TestWorkspace.CreateCSharpAsync(originalCode)
+            Using workspace = TestWorkspace.CreateCSharp(originalCode)
                 Dim expansionClient = New SnippetExpansionClient(
+                    workspace.ExportProvider.GetExportedValue(Of IThreadingContext),
                     Guids.VisualBasicDebuggerLanguageId,
                     workspace.Documents.Single().GetTextView(),
                     workspace.Documents.Single().GetTextBuffer(),
@@ -381,7 +379,9 @@ using G=   H.I;
                     workspace.CurrentSolution.Projects.Single().Documents.Single(),
                     If(position, 0),
                     snippetNode,
-                    placeSystemNamespaceFirst, CancellationToken.None)
+                    placeSystemNamespaceFirst,
+                    allowInHiddenRegions:=False,
+                    CancellationToken.None)
 
                 Assert.Equal(expectedUpdatedCode,
                              (Await updatedDocument.GetTextAsync()).ToString())

@@ -1,6 +1,9 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.ObjectModel
+Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.Internal.VisualStudio.PlatformUI
 Imports Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplorer
 Imports Microsoft.VisualStudio.LanguageServices.UnitTests.ProjectSystemShim.Framework
@@ -9,13 +12,14 @@ Imports Microsoft.VisualStudio.Shell
 Imports Roslyn.Test.Utilities
 
 Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.SolutionExplorer
+    <[UseExportProvider]>
     Public Class AnalyzersFolderProviderTests
 
         <WpfFact, Trait(Traits.Feature, Traits.Features.Diagnostics)>
         Public Sub CreateCollectionSource_NullItem()
             Using environment = New TestEnvironment()
                 Dim provider As IAttachedCollectionSourceProvider =
-                New AnalyzersFolderItemProvider(environment.ServiceProvider, Nothing)
+                    New AnalyzersFolderItemProvider(environment.Workspace, Nothing)
 
                 Dim collectionSource = provider.CreateCollectionSource(Nothing, KnownRelationships.Contains)
 
@@ -27,11 +31,11 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.SolutionExplorer
         Public Sub CreateCollectionSource_NullHierarchyIdentity()
             Using environment = New TestEnvironment()
                 Dim provider As IAttachedCollectionSourceProvider =
-                New AnalyzersFolderItemProvider(environment.ServiceProvider, Nothing)
+                    New AnalyzersFolderItemProvider(environment.Workspace, Nothing)
 
                 Dim hierarchyItem = New MockHierarchyItem With {.HierarchyIdentity = Nothing}
 
-                Dim collectionSource = provider.CreateCollectionSource(Nothing, KnownRelationships.Contains)
+                Dim collectionSource = provider.CreateCollectionSource(hierarchyItem, KnownRelationships.Contains)
 
                 Assert.Null(collectionSource)
             End Using
@@ -40,7 +44,7 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.SolutionExplorer
         <WpfFact, Trait(Traits.Feature, Traits.Features.Diagnostics)>
         Public Sub CreateCollectionSource()
             Using environment = New TestEnvironment()
-                Dim project = CreateVisualBasicProject(environment, "Foo")
+                Dim project = CreateVisualBasicProject(environment, "Goo")
                 Dim hierarchy = project.Hierarchy
 
                 Dim hierarchyItem = New MockHierarchyItem With {
@@ -54,13 +58,11 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.SolutionExplorer
                             .NestedHierarchy = hierarchy,
                             .NestedItemID = VSConstants.VSITEMID.Root
                         },
-                        .CanonicalName = "Foo"
+                        .CanonicalName = "Goo"
                     }
                 }
 
-                Dim mapper = New HierarchyItemMapper(environment.ProjectTracker)
-
-                Dim provider As IAttachedCollectionSourceProvider = New AnalyzersFolderItemProvider(mapper, environment.Workspace, New FakeAnalyzersCommandHandler)
+                Dim provider As IAttachedCollectionSourceProvider = New AnalyzersFolderItemProvider(environment.Workspace, New FakeAnalyzersCommandHandler)
 
                 Dim collectionSource = provider.CreateCollectionSource(hierarchyItem, KnownRelationships.Contains)
 

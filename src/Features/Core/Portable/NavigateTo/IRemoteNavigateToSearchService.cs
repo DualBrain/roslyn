@@ -1,5 +1,9 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using System.Collections.Immutable;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Remote;
 
@@ -7,10 +11,10 @@ namespace Microsoft.CodeAnalysis.NavigateTo
 {
     internal interface IRemoteNavigateToSearchService
     {
-        Task<SerializableNavigateToSearchResult[]> SearchDocumentAsync(
-            SerializableDocumentId documentId, string searchPattern, byte[] solutionChecksum);
+        ValueTask<ImmutableArray<SerializableNavigateToSearchResult>> SearchDocumentAsync(
+            PinnedSolutionInfo solutionInfo, DocumentId documentId, string searchPattern, ImmutableArray<string> kinds, CancellationToken cancellationToken);
 
-        Task<SerializableNavigateToSearchResult[]> SearchProjectAsync(
-             SerializableProjectId projectId, string searchPattern, byte[] solutionChecksum);
+        ValueTask<ImmutableArray<SerializableNavigateToSearchResult>> SearchProjectAsync(
+            PinnedSolutionInfo solutionInfo, ProjectId projectId, ImmutableArray<DocumentId> priorityDocumentIds, string searchPattern, ImmutableArray<string> kinds, CancellationToken cancellationToken);
     }
 }

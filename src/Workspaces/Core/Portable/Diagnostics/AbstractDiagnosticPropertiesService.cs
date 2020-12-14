@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Immutable;
 
@@ -12,20 +16,33 @@ namespace Microsoft.CodeAnalysis.Diagnostics
 
         protected abstract Compilation GetCompilation();
 
-        private ImmutableDictionary<string, string> GetAdditionalProperties(
+        private static ImmutableDictionary<string, string> GetAdditionalProperties(
             Diagnostic diagnostic,
             Compilation compilation)
         {
             var assemblyIds = compilation.GetUnreferencedAssemblyIdentities(diagnostic);
-            if (assemblyIds.IsDefaultOrEmpty)
+            var requiredVersion = Compilation.GetRequiredLanguageVersion(diagnostic);
+            if (assemblyIds.IsDefaultOrEmpty && requiredVersion == null)
             {
                 return null;
             }
 
-            var result = ImmutableDictionary<string, string>.Empty;
-            return result.Add(
-                DiagnosticPropertyConstants.UnreferencedAssemblyIdentity,
-                assemblyIds[0].GetDisplayName());
+            var result = ImmutableDictionary.CreateBuilder<string, string>();
+            if (!assemblyIds.IsDefaultOrEmpty)
+            {
+                result.Add(
+                    DiagnosticPropertyConstants.UnreferencedAssemblyIdentity,
+                    assemblyIds[0].GetDisplayName());
+            }
+
+            if (requiredVersion != null)
+            {
+                result.Add(
+                    DiagnosticPropertyConstants.RequiredLanguageVersion,
+                    requiredVersion);
+            }
+
+            return result.ToImmutable();
         }
     }
 }

@@ -1,13 +1,16 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System;
+#nullable disable
+
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Xml.Linq;
+using Microsoft.CodeAnalysis.Host;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Microsoft.VisualStudio.Composition;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
 {
@@ -28,18 +31,25 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
         private const string RootNamespaceAttributeName = "RootNamespace";
         private const string OutputTypeAttributeName = "OutputType";
         private const string ReportDiagnosticAttributeName = "ReportDiagnostic";
+        private const string CryptoKeyFileAttributeName = "CryptoKeyFile";
+        private const string StrongNameProviderAttributeName = "StrongNameProvider";
+        private const string DelaySignAttributeName = "DelaySign";
         private const string ParseOptionsElementName = "ParseOptions";
         private const string LanguageVersionAttributeName = "LanguageVersion";
         private const string FeaturesAttributeName = "Features";
         private const string DocumentationModeAttributeName = "DocumentationMode";
         private const string DocumentElementName = "Document";
+        private const string AdditionalDocumentElementName = "AdditionalDocument";
+        private const string AnalyzerConfigDocumentElementName = "AnalyzerConfigDocument";
         private const string AnalyzerElementName = "Analyzer";
         private const string AssemblyNameAttributeName = "AssemblyName";
         private const string CommonReferencesAttributeName = "CommonReferences";
+        private const string CommonReferencesWithoutValueTupleAttributeName = "CommonReferencesWithoutValueTuple";
         private const string CommonReferencesWinRTAttributeName = "CommonReferencesWinRT";
         private const string CommonReferencesNet45AttributeName = "CommonReferencesNet45";
         private const string CommonReferencesPortableAttributeName = "CommonReferencesPortable";
-        private const string CommonReferenceFacadeSystemRuntimeAttributeName = "CommonReferenceFacadeSystemRuntime";
+        private const string CommonReferencesNetCoreApp30Name = "CommonReferencesNetCoreApp30";
+        private const string CommonReferencesNetStandard20Name = "CommonReferencesNetStandard20";
         private const string FilePathAttributeName = "FilePath";
         private const string FoldersAttributeName = "Folders";
         private const string KindAttributeName = "Kind";
@@ -55,122 +65,95 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
         private const string AnalyzerFullPathAttributeName = "FullPath";
         private const string AliasAttributeName = "Alias";
         private const string ProjectNameAttribute = "Name";
+        private const string CheckOverflowAttributeName = "CheckOverflow";
+        private const string AllowUnsafeAttributeName = "AllowUnsafe";
+        private const string OutputKindName = "OutputKind";
+        private const string NullableAttributeName = "Nullable";
+        private const string DocumentFromSourceGenerator = "DocumentFromSourceGenerator";
 
         /// <summary>
         /// Creates a single buffer in a workspace.
         /// </summary>
         /// <param name="content">Lines of text, the buffer contents</param>
-        internal static Task<TestWorkspace> CreateAsync(
+        internal static TestWorkspace Create(
             string language,
             CompilationOptions compilationOptions,
             ParseOptions parseOptions,
             string content)
         {
-            return CreateAsync(language, compilationOptions, parseOptions, new[] { content });
+            return Create(language, compilationOptions, parseOptions, new[] { content });
         }
 
         /// <summary>
         /// Creates a single buffer in a workspace.
         /// </summary>
         /// <param name="content">Lines of text, the buffer contents</param>
-        internal static Task<TestWorkspace> CreateAsync(
+        internal static TestWorkspace Create(
             string workspaceKind,
             string language,
             CompilationOptions compilationOptions,
             ParseOptions parseOptions,
             string content)
         {
-            return CreateAsync(workspaceKind, language, compilationOptions, parseOptions, new[] { content });
-        }
-
-        /// <summary>
-        /// Creates a single buffer in a workspace.
-        /// </summary>
-        /// <param name="content">Lines of text, the buffer contents</param>
-        internal static Task<TestWorkspace> CreateAsync(
-            string workspaceKind,
-            string language,
-            CompilationOptions compilationOptions,
-            ParseOptions parseOptions,
-            string content,
-            ExportProvider exportProvider)
-        {
-            return CreateAsync(language, compilationOptions, parseOptions, new[] { content },  exportProvider: exportProvider, workspaceKind: workspaceKind);
+            return Create(workspaceKind, language, compilationOptions, parseOptions, new[] { content });
         }
 
         /// <param name="files">Can pass in multiple file contents: files will be named test1.cs, test2.cs, etc.</param>
-        internal static Task<TestWorkspace> CreateAsync(
+        internal static TestWorkspace Create(
             string language,
             CompilationOptions compilationOptions,
             ParseOptions parseOptions,
             params string[] files)
         {
-            return CreateAsync(language, compilationOptions, parseOptions, files, exportProvider: null);
+            return Create(language, compilationOptions, parseOptions, files, exportProvider: null);
         }
 
         /// <param name="files">Can pass in multiple file contents: files will be named test1.cs, test2.cs, etc.</param>
-        internal static Task<TestWorkspace> CreateAsync(
+        internal static TestWorkspace Create(
             string workspaceKind,
             string language,
             CompilationOptions compilationOptions,
             ParseOptions parseOptions,
             params string[] files)
         {
-            return CreateAsync(language, compilationOptions, parseOptions, files, exportProvider: null, workspaceKind: workspaceKind);
+            return Create(language, compilationOptions, parseOptions, files, exportProvider: null, workspaceKind: workspaceKind);
         }
 
-        internal static async Task<TestWorkspace> CreateAsync(
+        internal static string GetDefaultTestSourceDocumentName(int index, string extension)
+           => "test" + (index + 1) + extension;
+
+        internal static TestWorkspace Create(
             string language,
             CompilationOptions compilationOptions,
             ParseOptions parseOptions,
             string[] files,
-            ExportProvider exportProvider,
+            ExportProvider exportProvider = null,
+            TestComposition composition = null,
             string[] metadataReferences = null,
             string workspaceKind = null,
             string extension = null,
-            bool commonReferences = true)
+            bool commonReferences = true,
+            bool openDocuments = false,
+            IDocumentServiceProvider documentServiceProvider = null)
         {
-            var documentElements = new List<XElement>();
-            var index = 1;
-
-            if (extension == null)
-            {
-                extension = language == LanguageNames.CSharp
-                ? CSharpExtension
-                : VisualBasicExtension;
-            }
-
-            foreach (var file in files)
-            {
-                documentElements.Add(CreateDocumentElement(file, "test" + index++ + extension, parseOptions));
-            }
-
-            metadataReferences = metadataReferences ?? Array.Empty<string>();
-            foreach (var reference in metadataReferences)
-            {
-                documentElements.Add(CreateMetadataReference(reference));
-            }
-
-            var workspaceElement = CreateWorkspaceElement(
-                CreateProjectElement(compilationOptions?.ModuleName ?? "Test", language, commonReferences, parseOptions, compilationOptions, documentElements));
-
-            return await CreateAsync(workspaceElement, exportProvider: exportProvider, workspaceKind: workspaceKind);
+            var workspaceElement = CreateWorkspaceElement(language, compilationOptions, parseOptions, files, metadataReferences, extension, commonReferences);
+            return Create(workspaceElement, openDocuments, exportProvider, composition, workspaceKind, documentServiceProvider);
         }
 
-        internal static Task<TestWorkspace> CreateAsync(
+        internal static TestWorkspace Create(
             string language,
             CompilationOptions compilationOptions,
             ParseOptions[] parseOptions,
             string[] files,
             ExportProvider exportProvider)
         {
-            Contract.Requires(parseOptions == null || (files.Length == parseOptions.Length), "Please specify a parse option for each file.");
+            Debug.Assert(parseOptions == null || (files.Length == parseOptions.Length), "Please specify a parse option for each file.");
 
             var documentElements = new List<XElement>();
-            var index = 1;
-            var extension = "";
+            var index = 0;
+            string extension;
 
-            for (int i = 0; i < files.Length; i++)
+            for (var i = 0; i < files.Length; i++)
             {
                 if (language == LanguageNames.CSharp)
                 {
@@ -189,78 +172,86 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
                     extension = language;
                 }
 
-                documentElements.Add(CreateDocumentElement(files[i], "test" + index++ + extension, parseOptions == null ? null : parseOptions[i]));
+                documentElements.Add(CreateDocumentElement(files[i], GetDefaultTestSourceDocumentName(index++, extension), parseOptions == null ? null : parseOptions[i]));
             }
 
             var workspaceElement = CreateWorkspaceElement(
                 CreateProjectElement("Test", language, true, parseOptions.FirstOrDefault(), compilationOptions, documentElements));
 
-            return CreateAsync(workspaceElement, exportProvider: exportProvider);
+            return Create(workspaceElement, exportProvider: exportProvider);
         }
 
         #region C#
 
-        public static Task<TestWorkspace> CreateCSharpAsync(
+        public static TestWorkspace CreateCSharp(
             string file,
             ParseOptions parseOptions = null,
             CompilationOptions compilationOptions = null,
             ExportProvider exportProvider = null,
-            string[] metadataReferences = null)
+            TestComposition composition = null,
+            string[] metadataReferences = null,
+            bool openDocuments = false)
         {
-            return CreateCSharpAsync(new[] { file }, parseOptions, compilationOptions, exportProvider, metadataReferences);
+            return CreateCSharp(new[] { file }, parseOptions, compilationOptions, exportProvider, composition, metadataReferences, openDocuments);
         }
 
-        public static Task<TestWorkspace> CreateCSharpAsync(
+        public static TestWorkspace CreateCSharp(
             string[] files,
             ParseOptions parseOptions = null,
             CompilationOptions compilationOptions = null,
             ExportProvider exportProvider = null,
-            string[] metadataReferences = null)
+            TestComposition composition = null,
+            string[] metadataReferences = null,
+            bool openDocuments = false)
         {
-            return CreateAsync(LanguageNames.CSharp, compilationOptions, parseOptions, files, exportProvider, metadataReferences);
+            return Create(LanguageNames.CSharp, compilationOptions, parseOptions, files, exportProvider, composition, metadataReferences, openDocuments: openDocuments);
         }
 
-        public static Task<TestWorkspace> CreateCSharpAsync(
+        public static TestWorkspace CreateCSharp2(
             string[] files,
             ParseOptions[] parseOptions = null,
             CompilationOptions compilationOptions = null,
             ExportProvider exportProvider = null)
         {
-            return CreateAsync(LanguageNames.CSharp, compilationOptions, parseOptions, files, exportProvider);
+            return Create(LanguageNames.CSharp, compilationOptions, parseOptions, files, exportProvider);
         }
 
         #endregion
 
         #region VB
 
-        public static Task<TestWorkspace> CreateVisualBasicAsync(
+        public static TestWorkspace CreateVisualBasic(
             string file,
             ParseOptions parseOptions = null,
             CompilationOptions compilationOptions = null,
             ExportProvider exportProvider = null,
-            string[] metadataReferences = null)
+            TestComposition composition = null,
+            string[] metadataReferences = null,
+            bool openDocuments = false)
         {
-            return CreateVisualBasicAsync(new[] { file }, parseOptions, compilationOptions, exportProvider, metadataReferences);
+            return CreateVisualBasic(new[] { file }, parseOptions, compilationOptions, exportProvider, composition, metadataReferences, openDocuments);
         }
 
-        public static Task<TestWorkspace> CreateVisualBasicAsync(
+        public static TestWorkspace CreateVisualBasic(
             string[] files,
             ParseOptions parseOptions = null,
             CompilationOptions compilationOptions = null,
             ExportProvider exportProvider = null,
-            string[] metadataReferences = null)
+            TestComposition composition = null,
+            string[] metadataReferences = null,
+            bool openDocuments = false)
         {
-            return CreateAsync(LanguageNames.VisualBasic, compilationOptions, parseOptions, files, exportProvider, metadataReferences);
+            return Create(LanguageNames.VisualBasic, compilationOptions, parseOptions, files, exportProvider, composition, metadataReferences, openDocuments: openDocuments);
         }
 
         /// <param name="files">Can pass in multiple file contents with individual source kind: files will be named test1.vb, test2.vbx, etc.</param>
-        public static Task<TestWorkspace> CreateVisualBasicAsync(
+        public static TestWorkspace CreateVisualBasic(
             string[] files,
             ParseOptions[] parseOptions = null,
             CompilationOptions compilationOptions = null,
             ExportProvider exportProvider = null)
         {
-            return CreateAsync(LanguageNames.VisualBasic, compilationOptions, parseOptions, files, exportProvider);
+            return Create(LanguageNames.VisualBasic, compilationOptions, parseOptions, files, exportProvider);
         }
 
         #endregion

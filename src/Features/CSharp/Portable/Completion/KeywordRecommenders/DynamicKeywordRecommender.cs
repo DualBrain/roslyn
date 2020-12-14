@@ -1,9 +1,14 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Completion.Providers;
+using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Extensions.ContextQuery;
 using Microsoft.CodeAnalysis.CSharp.Utilities;
 using Roslyn.Utilities;
@@ -12,9 +17,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
 {
     internal class DynamicKeywordRecommender : IKeywordRecommender<CSharpSyntaxContext>
     {
-        private bool IsValidContext(int position, CSharpSyntaxContext context, CancellationToken cancellationToken)
+        private static bool IsValidContext(int position, CSharpSyntaxContext context, CancellationToken cancellationToken)
         {
-            var syntaxTree = context.SyntaxTree;
             if (context.IsPreProcessorDirectiveContext)
             {
                 return false;
@@ -30,7 +34,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
                 return Task.FromResult(SpecializedCollections.SingletonEnumerable(new RecommendedKeyword("dynamic")));
             }
 
-            return Task.FromResult<IEnumerable<RecommendedKeyword>>(null);
+            return SpecializedTasks.Null<IEnumerable<RecommendedKeyword>>();
         }
 
         protected static bool IsDynamicTypeContext(
@@ -51,8 +55,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
                 syntaxTree.IsPossibleCastTypeContext(position, context.LeftToken, cancellationToken) ||
                 context.IsObjectCreationTypeContext ||
                 context.IsGenericTypeArgumentContext ||
+                context.IsFunctionPointerTypeArgumentContext ||
                 context.IsIsOrAsTypeContext ||
-                syntaxTree.IsDefaultExpressionContext(position, context.LeftToken, cancellationToken) ||
+                syntaxTree.IsDefaultExpressionContext(position, context.LeftToken) ||
+                syntaxTree.IsAfterKeyword(position, SyntaxKind.ConstKeyword, cancellationToken) ||
+                IsAfterRefTypeContext(context) ||
                 context.IsLocalVariableDeclarationContext ||
                 context.IsParameterTypeContext ||
                 context.IsPossibleLambdaOrAnonymousMethodParameterTypeContext ||
@@ -60,9 +67,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
                 syntaxTree.IsGlobalMemberDeclarationContext(position, SyntaxKindSet.AllGlobalMemberModifiers, cancellationToken) ||
                 context.IsMemberDeclarationContext(
                     validModifiers: SyntaxKindSet.AllMemberModifiers,
-                    validTypeDeclarations: SyntaxKindSet.ClassInterfaceStructTypeDeclarations,
+                    validTypeDeclarations: SyntaxKindSet.ClassInterfaceStructRecordTypeDeclarations,
                     canBePartial: false,
                     cancellationToken: cancellationToken);
         }
+
+        private static bool IsAfterRefTypeContext(CSharpSyntaxContext context)
+            => context.TargetToken.IsKind(SyntaxKind.RefKeyword, SyntaxKind.ReadOnlyKeyword) &&
+               context.TargetToken.Parent.IsKind(SyntaxKind.RefType);
     }
 }

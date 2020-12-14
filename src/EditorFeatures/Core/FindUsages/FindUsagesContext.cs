@@ -1,9 +1,12 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System;
+#nullable disable
+
 using System.Threading;
 using System.Threading.Tasks;
-using Roslyn.Utilities;
+using Microsoft.CodeAnalysis.Shared.Utilities;
 
 namespace Microsoft.CodeAnalysis.FindUsages
 {
@@ -11,24 +14,24 @@ namespace Microsoft.CodeAnalysis.FindUsages
     {
         public virtual CancellationToken CancellationToken { get; }
 
+        public IStreamingProgressTracker ProgressTracker { get; }
+
         protected FindUsagesContext()
-        {
-        }
+            => this.ProgressTracker = new StreamingProgressTracker(this.ReportProgressAsync);
 
-        public virtual void ReportMessage(string message)
-        {
-        }
+        public virtual ValueTask ReportMessageAsync(string message) => default;
 
-        public virtual void SetSearchLabel(string displayName)
-        {
-        }
+        public virtual ValueTask SetSearchTitleAsync(string title) => default;
 
-        public virtual Task OnCompletedAsync() => SpecializedTasks.EmptyTask;
+        public virtual ValueTask OnCompletedAsync() => default;
 
-        public virtual Task OnDefinitionFoundAsync(DefinitionItem definition) => SpecializedTasks.EmptyTask;
+        public virtual ValueTask OnDefinitionFoundAsync(DefinitionItem definition) => default;
 
-        public virtual Task OnReferenceFoundAsync(SourceReferenceItem reference) => SpecializedTasks.EmptyTask;
+        public virtual ValueTask OnReferenceFoundAsync(SourceReferenceItem reference) => default;
 
-        public virtual Task ReportProgressAsync(int current, int maximum) => SpecializedTasks.EmptyTask;
+        protected virtual ValueTask ReportProgressAsync(int current, int maximum) => default;
+
+        ValueTask IFindUsagesContext.ReportProgressAsync(int current, int maximum)
+            => ReportProgressAsync(current, maximum);
     }
 }

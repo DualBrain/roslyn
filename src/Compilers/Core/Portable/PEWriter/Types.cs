@@ -1,10 +1,14 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Symbols;
 using EmitContext = Microsoft.CodeAnalysis.Emit.EmitContext;
 
 namespace Microsoft.Cci
@@ -157,8 +161,8 @@ namespace Microsoft.Cci
         /// </summary>
         TypeParameterVariance Variance { get; }
 
-        IGenericMethodParameter AsGenericMethodParameter { get; }
-        IGenericTypeParameter AsGenericTypeParameter { get; }
+        IGenericMethodParameter? AsGenericMethodParameter { get; }
+        IGenericTypeParameter? AsGenericTypeParameter { get; }
     }
 
     /// <summary>
@@ -209,11 +213,8 @@ namespace Microsoft.Cci
         /// Returns the generic type of which this type is an instance.
         /// Equivalent to Symbol.OriginalDefinition
         /// </summary>
-        INamedTypeReference GenericType
-        {
-            get;
-            // ^ ensures result.ResolvedType.IsGeneric;
-        }
+        INamedTypeReference GetGenericType(EmitContext context);
+        // ^ ensures result.ResolvedType.IsGeneric;
     }
 
     /// <summary>
@@ -281,6 +282,11 @@ namespace Microsoft.Cci
         /// Containing namespace or null if this namespace is global.
         /// </summary>
         INamespace ContainingNamespace { get; }
+
+        /// <summary>
+        /// Returns underlying internal symbol object, if any.
+        /// </summary>
+        INamespaceSymbolInternal GetInternalSymbol();
     }
 
     /// <summary>
@@ -323,10 +329,8 @@ namespace Microsoft.Cci
         /// type of a generic type instance), then the unspecialized member refers to a member from the unspecialized containing type. (I.e. the unspecialized member always
         /// corresponds to a definition that is not obtained via specialization.)
         /// </summary>
-        INestedTypeReference/*!*/ UnspecializedVersion
-        {
-            get;
-        }
+        [return: NotNull]
+        INestedTypeReference GetUnspecializedVersion(EmitContext context);
     }
 
     /// <summary>
@@ -387,16 +391,14 @@ namespace Microsoft.Cci
     }
 
     /// <summary>
-    /// This interface models the metadata representation of a managed pointer.
-    /// Remark: This should be only used in attributes. For other objects like Local variables etc
-    /// there is explicit IsReference field that should be used.
+    /// This interface models the metadata representation of a pointer to a function in unmanaged memory.
     /// </summary>
-    internal interface IManagedPointerTypeReference : ITypeReference
+    internal interface IFunctionPointerTypeReference : ITypeReference
     {
         /// <summary>
-        /// The type of value stored at the target memory location.
+        /// The signature of the function located at the target memory address.
         /// </summary>
-        ITypeReference GetTargetType(EmitContext context);
+        ISignature Signature { get; }
     }
 
     /// <summary>
@@ -446,13 +448,13 @@ namespace Microsoft.Cci
         /// <summary>
         /// Returns null for interfaces and System.Object.
         /// </summary>
-        ITypeReference GetBaseClass(EmitContext context);
+        ITypeReference? GetBaseClass(EmitContext context);
         // ^ ensures result == null || result.ResolvedType.IsClass;
 
         /// <summary>
         /// Zero or more events defined by this type.
         /// </summary>
-        IEnumerable<IEventDefinition> Events { get; }
+        IEnumerable<IEventDefinition> GetEvents(EmitContext context);
 
         /// <summary>
         /// Zero or more implementation overrides provided by the class.
@@ -517,6 +519,11 @@ namespace Microsoft.Cci
         /// True if the type is an interface.
         /// </summary>
         bool IsInterface { get; }
+
+        /// <summary>
+        /// True if the type is a delegate.
+        /// </summary>
+        bool IsDelegate { get; }
 
         /// <summary>
         /// True if this type gets special treatment from the runtime.
@@ -605,28 +612,28 @@ namespace Microsoft.Cci
         /// <summary>
         /// The type definition being referred to.
         /// </summary>
-        ITypeDefinition GetResolvedType(EmitContext context);
+        ITypeDefinition? GetResolvedType(EmitContext context);
 
         /// <summary>
         /// Unless the value of TypeCode is PrimitiveTypeCode.NotPrimitive, the type corresponds to a "primitive" CLR type (such as System.Int32) and
         /// the type code identifies which of the primitive types it corresponds to.
         /// </summary>
-        PrimitiveTypeCode TypeCode(EmitContext context);
+        PrimitiveTypeCode TypeCode { get; }
 
         /// <summary>
         /// TypeDefs defined in modules linked to the assembly being emitted are listed in the ExportedTypes table.
         /// </summary>
         TypeDefinitionHandle TypeDef { get; }
 
-        IGenericMethodParameterReference AsGenericMethodParameterReference { get; }
-        IGenericTypeInstanceReference AsGenericTypeInstanceReference { get; }
-        IGenericTypeParameterReference AsGenericTypeParameterReference { get; }
-        INamespaceTypeDefinition AsNamespaceTypeDefinition(EmitContext context);
-        INamespaceTypeReference AsNamespaceTypeReference { get; }
-        INestedTypeDefinition AsNestedTypeDefinition(EmitContext context);
-        INestedTypeReference AsNestedTypeReference { get; }
-        ISpecializedNestedTypeReference AsSpecializedNestedTypeReference { get; }
-        ITypeDefinition AsTypeDefinition(EmitContext context);
+        IGenericMethodParameterReference? AsGenericMethodParameterReference { get; }
+        IGenericTypeInstanceReference? AsGenericTypeInstanceReference { get; }
+        IGenericTypeParameterReference? AsGenericTypeParameterReference { get; }
+        INamespaceTypeDefinition? AsNamespaceTypeDefinition(EmitContext context);
+        INamespaceTypeReference? AsNamespaceTypeReference { get; }
+        INestedTypeDefinition? AsNestedTypeDefinition(EmitContext context);
+        INestedTypeReference? AsNestedTypeReference { get; }
+        ISpecializedNestedTypeReference? AsSpecializedNestedTypeReference { get; }
+        ITypeDefinition? AsTypeDefinition(EmitContext context);
     }
 
     /// <summary>
@@ -728,6 +735,11 @@ namespace Microsoft.Cci
         /// Not a primitive type.
         /// </summary>
         NotPrimitive,
+
+        /// <summary>
+        /// A pointer to a function in fixed or managed memory.
+        /// </summary>
+        FunctionPointer,
 
         /// <summary>
         /// Type is a dummy type.

@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.DocumentationComments;
@@ -17,85 +21,29 @@ namespace Microsoft.CodeAnalysis.MetadataAsSource
                 _symbol = fieldSymbol;
             }
 
-            public new IFieldSymbol OriginalDefinition
-            {
-                get
-                {
-                    return _symbol.OriginalDefinition;
-                }
-            }
+            public new IFieldSymbol OriginalDefinition => _symbol.OriginalDefinition;
 
-            public IFieldSymbol CorrespondingTupleField
-            {
-                get
-                {
-                    return null;
-                }
-            }
+            public IFieldSymbol CorrespondingTupleField => null;
 
-            public ISymbol AssociatedSymbol
-            {
-                get
-                {
-                    return _symbol.AssociatedSymbol;
-                }
-            }
+            public ISymbol AssociatedSymbol => _symbol.AssociatedSymbol;
 
-            public object ConstantValue
-            {
-                get
-                {
-                    return _symbol.ConstantValue;
-                }
-            }
+            public object ConstantValue => _symbol.ConstantValue;
 
-            public ImmutableArray<CustomModifier> CustomModifiers
-            {
-                get
-                {
-                    return _symbol.CustomModifiers;
-                }
-            }
+            public ImmutableArray<CustomModifier> CustomModifiers => _symbol.CustomModifiers;
 
-            public bool HasConstantValue
-            {
-                get
-                {
-                    return _symbol.HasConstantValue;
-                }
-            }
+            public bool HasConstantValue => _symbol.HasConstantValue;
 
-            public bool IsConst
-            {
-                get
-                {
-                    return _symbol.IsConst;
-                }
-            }
+            public bool IsConst => _symbol.IsConst;
 
-            public bool IsReadOnly
-            {
-                get
-                {
-                    return _symbol.IsReadOnly;
-                }
-            }
+            public bool IsReadOnly => _symbol.IsReadOnly;
 
-            public bool IsVolatile
-            {
-                get
-                {
-                    return _symbol.IsVolatile;
-                }
-            }
+            public bool IsVolatile => _symbol.IsVolatile;
 
-            public ITypeSymbol Type
-            {
-                get
-                {
-                    return _symbol.Type;
-                }
-            }
+            public bool IsFixedSizeBuffer => _symbol.IsFixedSizeBuffer;
+
+            public ITypeSymbol Type => _symbol.Type;
+
+            public NullableAnnotation NullableAnnotation => _symbol.NullableAnnotation;
         }
     }
 }

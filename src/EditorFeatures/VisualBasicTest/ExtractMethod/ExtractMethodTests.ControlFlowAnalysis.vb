@@ -1,5 +1,6 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
-
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.ExtractMethod
     Partial Public Class ExtractMethodTests
@@ -9,6 +10,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.ExtractMethod
         ''' (B) Analyzer
         ''' </summary>
         ''' <remarks></remarks>
+        <[UseExportProvider]>
         Public Class FlowAnalysis
 
             <Fact, Trait(Traits.Feature, Traits.Features.ExtractMethod)>
@@ -82,16 +84,18 @@ End Class</text>
         Dim x As Integer = 5
         Console.Write(x)
         Dim i As Integer
-        NewMethod(i)
+        i = NewMethod(i)
         Return x
     End Function
 
-    Private Shared Sub NewMethod(i As Integer)
+    Private Shared Function NewMethod(i As Integer) As Integer
         Do
             Console.Write(i)
             i = i + 1
-        Loop Until i > 5
-    End Sub
+        Loop Until i &gt; 5
+
+        Return i
+    End Function
 End Class</text>
 
                 Await TestExtractMethodAsync(code, expected)
@@ -117,16 +121,18 @@ End Class</text>
         Dim x As Integer = 5
         Console.Write(x)
         Dim i As Integer
-        NewMethod(i)
+        i = NewMethod(i)
         Return x
     End Function
 
-    Private Shared Sub NewMethod(i As Integer)
+    Private Shared Function NewMethod(i As Integer) As Integer
         Do
             Console.Write(i)
             i = i + 1
-        Loop Until i > 5
-    End Sub
+        Loop Until i &gt; 5
+
+        Return i
+    End Function
 End Class</text>
 
                 Await TestExtractMethodAsync(code, expected)
@@ -154,18 +160,20 @@ End Class</text>
         Dim x As Integer = 5
         Console.Write(x)
         Dim i As Integer
-        NewMethod(i)
+        i = NewMethod(i)
         Return x
     End Function
 
-    Private Shared Sub NewMethod(i As Integer)
+    Private Shared Function NewMethod(i As Integer) As Integer
         Do
             Console.Write(i)
             i = i + 1
             Continue Do
             'Blah
         Loop Until i > 5
-    End Sub
+
+        Return i
+    End Function
 End Class</text>
 
                 Await TestExtractMethodAsync(code, expected)
@@ -248,7 +256,7 @@ End Class</text>
             End Function
 
             <WorkItem(540154, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540154")>
-            <Fact(Skip:= "https://github.com/dotnet/roslyn/issues/15223"), Trait(Traits.Feature, Traits.Features.ExtractMethod)>
+            <Fact, Trait(Traits.Feature, Traits.Features.ExtractMethod)>
             Public Async Function BugFix6313_1() As Task
                 Dim code = <text>Imports System
 
@@ -424,7 +432,7 @@ End Class</text>
             End Function
 
             <WorkItem(540154, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540154"), WorkItem(541484, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541484")>
-            <Fact(Skip:= "https://github.com/dotnet/roslyn/issues/15223"), Trait(Traits.Feature, Traits.Features.ExtractMethod)>
+            <Fact, Trait(Traits.Feature, Traits.Features.ExtractMethod)>
             Public Async Function BugFix6313_6() As Task
                 Dim code = <text>Imports System
 
@@ -494,7 +502,7 @@ End Module</text>
             <Fact, WorkItem(530625, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530625"), Trait(Traits.Feature, Traits.Features.ExtractMethod)>
             Public Async Function TestUnreachableEndInFunction() As Task
                 Dim code = <text>Module Program
-    Function Foo() As Integer
+    Function Goo() As Integer
         If True Then
             [|Do : Loop|] ' Extract method
             Exit Function
@@ -505,7 +513,7 @@ End Module</text>
 End Module</text>
 
                 Dim expected = <text>Module Program
-    Function Foo() As Integer
+    Function Goo() As Integer
         If True Then
             NewMethod() ' Extract method
             Exit Function
@@ -538,10 +546,10 @@ Module Module1
         If x = 1 Then
             Return 1
         Else
-            GoTo foo
+            GoTo goo
         End If
         Exit Function
-foo:
+goo:
         Return 2L|]
     End Function
 End Module</text>
@@ -564,10 +572,10 @@ Module Module1
         If x = 1 Then
             Return 1
         Else
-            GoTo foo
+            GoTo goo
         End If
         Exit Function
-foo:
+goo:
         Return 2L
     End Function
 End Module</text>

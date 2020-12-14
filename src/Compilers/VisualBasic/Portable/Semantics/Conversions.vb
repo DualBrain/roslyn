@@ -1,15 +1,13 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
-Imports System.Diagnostics
-Imports System.Linq
 Imports System.Runtime.InteropServices
-Imports Microsoft.CodeAnalysis.Collections
-Imports Microsoft.CodeAnalysis.Text
+Imports Microsoft.CodeAnalysis.Operations
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
-Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols.TypeSymbolExtensions
-Imports TypeKind = Microsoft.CodeAnalysis.TypeKind
 
 Namespace Microsoft.CodeAnalysis.VisualBasic
 
@@ -18,7 +16,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
     ''' associated symbol).
     ''' </summary>
     Public Structure Conversion
-        Implements IEquatable(Of Conversion)
+        Implements IEquatable(Of Conversion), IConvertibleConversion
 
         Private ReadOnly _convKind As ConversionKind
         Private ReadOnly _method As MethodSymbol
@@ -233,6 +231,18 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         End Operator
 
         ''' <summary>
+        ''' Creates a <seealso cref="CommonConversion"/> from this Visual Basic conversion.
+        ''' </summary>
+        ''' <returns>The <see cref="CommonConversion"/> that represents this conversion.</returns>
+        ''' <remarks>
+        ''' This is a lossy conversion; it is not possible to recover the original <see cref="Conversion"/>
+        ''' from the <see cref="CommonConversion"/> struct.
+        ''' </remarks>
+        Public Function ToCommonConversion() As CommonConversion Implements IConvertibleConversion.ToCommonConversion
+            Return New CommonConversion(Exists, IsIdentity, IsNumeric, IsReference, IsWidening, IsNullableValueType, MethodSymbol)
+        End Function
+
+        ''' <summary>
         ''' Determines whether the specified object is equal to the current object.
         ''' </summary>
         ''' <param name="obj">
@@ -426,6 +436,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         Error_SubToFunction = &H2000
         Error_ReturnTypeMismatch = &H4000
         Error_OverloadResolution = &H8000
+        Error_StubNotSupported = &H10000
 
         AllErrorReasons = Error_ByRefByValMismatch Or
                           Error_Unspecified Or
@@ -433,7 +444,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                           Error_RestrictedType Or
                           Error_SubToFunction Or
                           Error_ReturnTypeMismatch Or
-                          Error_OverloadResolution
+                          Error_OverloadResolution Or
+                          Error_StubNotSupported
     End Enum
 
     ''' <summary>
@@ -1221,7 +1233,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         End Function
 
         Public Shared Function ClassifyTupleConversion(source As BoundTupleLiteral, destination As TypeSymbol, binder As Binder, <[In], Out> ByRef useSiteDiagnostics As HashSet(Of DiagnosticInfo)) As ConversionKind
-            If source.Type = destination Then
+            If TypeSymbol.Equals(source.Type, destination, TypeCompareKind.ConsiderEverything) Then
                 Return ConversionKind.Identity
             End If
 
@@ -1250,7 +1262,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             Dim targetElementTypes As ImmutableArray(Of TypeSymbol) = destination.GetElementTypesOfTupleOrCompatible()
-            Debug.Assert(arguments.Count = targetElementTypes.Length)
+            Debug.Assert(arguments.Length = targetElementTypes.Length)
 
             ' check arguments against flattened list of target element types 
             Dim result As ConversionKind = wideningConversion
@@ -3566,7 +3578,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             Dim targetElementTypes As ImmutableArray(Of TypeSymbol) = destination.GetElementTypesOfTupleOrCompatible()
-            Debug.Assert(sourceElementTypes.Count = targetElementTypes.Length)
+            Debug.Assert(sourceElementTypes.Length = targetElementTypes.Length)
 
             ' check arguments against flattened list of target element types 
             Dim result As ConversionKind = ConversionKind.WideningTuple
@@ -4013,9 +4025,24 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         '''     Return ConvertFrom(...)
         ''' End ... 
         ''' </summary>
+        Public Shared Function ClassifyMethodConversionBasedOnReturn(
+            returnTypeOfConvertFromMethod As TypeSymbol,
+            convertFromMethodIsByRef As Boolean,
+            returnTypeOfConvertToMethod As TypeSymbol,
+            convertToMethodIsByRef As Boolean,
+            <[In], Out> ByRef useSiteDiagnostics As HashSet(Of DiagnosticInfo)
+        ) As MethodConversionKind
+            If convertToMethodIsByRef <> convertFromMethodIsByRef Then
+                Return MethodConversionKind.Error_ByRefByValMismatch
+            End If
+
+            Return ClassifyMethodConversionBasedOnReturnType(returnTypeOfConvertFromMethod, returnTypeOfConvertToMethod, convertFromMethodIsByRef, useSiteDiagnostics)
+        End Function
+
         Public Shared Function ClassifyMethodConversionBasedOnReturnType(
             returnTypeOfConvertFromMethod As TypeSymbol,
             returnTypeOfConvertToMethod As TypeSymbol,
+            isRefReturning As Boolean,
             <[In], Out> ByRef useSiteDiagnostics As HashSet(Of DiagnosticInfo)
         ) As MethodConversionKind
             Debug.Assert(returnTypeOfConvertFromMethod IsNot Nothing)
@@ -4046,8 +4073,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             Dim typeConversion As ConversionKind = ClassifyConversion(returnTypeOfConvertFromMethod, returnTypeOfConvertToMethod, useSiteDiagnostics).Key
 
-            Dim result As MethodConversionKind
+            If isRefReturning AndAlso Not IsIdentityConversion(typeConversion) Then
+                Return MethodConversionKind.Error_ReturnTypeMismatch
+            End If
 
+            Dim result As MethodConversionKind
             If IsNarrowingConversion(typeConversion) Then
                 result = MethodConversionKind.ReturnIsWidening
 
@@ -4128,11 +4158,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ) As MethodConversionKind
 
             ' determine conversions based on return type
-            Dim methodConversions = Conversions.ClassifyMethodConversionBasedOnReturnType(lambdaOrDelegateInvokeSymbol.ReturnType, toMethodSignature.ReturnType, useSiteDiagnostics)
+            Dim methodConversions = Conversions.ClassifyMethodConversionBasedOnReturn(lambdaOrDelegateInvokeSymbol.ReturnType, lambdaOrDelegateInvokeSymbol.ReturnsByRef,
+                                                                                      toMethodSignature.ReturnType, toMethodSignature.ReturnsByRef, useSiteDiagnostics)
 
             ' determine conversions based on arguments
             methodConversions = methodConversions Or ClassifyMethodConversionForLambdaOrAnonymousDelegateBasedOnParameters(toMethodSignature, lambdaOrDelegateInvokeSymbol.Parameters, useSiteDiagnostics)
 
+            Debug.Assert(Not lambdaOrDelegateInvokeSymbol.ReturnsByRef) ' No interaction of ByRef return with other relaxations
             Return methodConversions
         End Function
 
@@ -4165,7 +4197,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Else
                 For parameterIndex As Integer = 0 To parameters.Length - 1
                     ' Check ByRef
-                    If toMethodSignature.IsByRef(parameterIndex) <> parameters(parameterIndex).IsByRef Then
+                    If toMethodSignature.ParameterIsByRef(parameterIndex) <> parameters(parameterIndex).IsByRef Then
                         methodConversions = methodConversions Or MethodConversionKind.Error_ByRefByValMismatch
                     End If
 
@@ -4180,7 +4212,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                                      toParameterType)
 
                         ' Check copy back conversion.
-                        If toMethodSignature.IsByRef(parameterIndex) Then
+                        If toMethodSignature.ParameterIsByRef(parameterIndex) Then
                             methodConversions = methodConversions Or
                                                 Conversions.ClassifyMethodConversionBasedOnArgumentConversion(
                                                                          Conversions.ClassifyConversion(lambdaParameterType, toParameterType, useSiteDiagnostics).Key,
@@ -4222,7 +4254,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Debug.Assert(conversion.Operand.IsNothingLiteral() OrElse conversion.Operand.Kind = BoundKind.Lambda)
                 methodConversion = MethodConversionKind.Identity
             Else
-                methodConversion = ClassifyMethodConversionBasedOnReturnType(operandType, conversion.Type, useSiteDiagnostics)
+                methodConversion = ClassifyMethodConversionBasedOnReturnType(operandType, conversion.Type, isRefReturning:=False, useSiteDiagnostics:=useSiteDiagnostics)
             End If
 
             Return DetermineDelegateRelaxationLevel(methodConversion)

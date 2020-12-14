@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
@@ -60,9 +62,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             If instrument Then
                 Select Case statement.Kind
                     Case BoundKind.WhileStatement
-                        afterBodyResumeTargetOpt = _instrumenter.InstrumentWhileEpilogue(DirectCast(statement, BoundWhileStatement), afterBodyResumeTargetOpt)
+                        afterBodyResumeTargetOpt = _instrumenterOpt.InstrumentWhileEpilogue(DirectCast(statement, BoundWhileStatement), afterBodyResumeTargetOpt)
                     Case BoundKind.DoLoopStatement
-                        afterBodyResumeTargetOpt = _instrumenter.InstrumentDoLoopEpilogue(DirectCast(statement, BoundDoLoopStatement), afterBodyResumeTargetOpt)
+                        afterBodyResumeTargetOpt = _instrumenterOpt.InstrumentDoLoopEpilogue(DirectCast(statement, BoundDoLoopStatement), afterBodyResumeTargetOpt)
                     Case BoundKind.ForEachStatement
                     Case Else
                         Throw ExceptionUtilities.UnexpectedValue(statement.Kind)
@@ -76,11 +78,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             If rewrittenCondition IsNot Nothing AndAlso instrument Then
                 Select Case statement.Kind
                     Case BoundKind.WhileStatement
-                        rewrittenCondition = _instrumenter.InstrumentWhileStatementCondition(DirectCast(statement, BoundWhileStatement), rewrittenCondition, _currentMethodOrLambda)
+                        rewrittenCondition = _instrumenterOpt.InstrumentWhileStatementCondition(DirectCast(statement, BoundWhileStatement), rewrittenCondition, _currentMethodOrLambda)
                     Case BoundKind.DoLoopStatement
-                        rewrittenCondition = _instrumenter.InstrumentDoLoopStatementCondition(DirectCast(statement, BoundDoLoopStatement), rewrittenCondition, _currentMethodOrLambda)
+                        rewrittenCondition = _instrumenterOpt.InstrumentDoLoopStatementCondition(DirectCast(statement, BoundDoLoopStatement), rewrittenCondition, _currentMethodOrLambda)
                     Case BoundKind.ForEachStatement
-                        rewrittenCondition = _instrumenter.InstrumentForEachStatementCondition(DirectCast(statement, BoundForEachStatement), rewrittenCondition, _currentMethodOrLambda)
+                        rewrittenCondition = _instrumenterOpt.InstrumentForEachStatementCondition(DirectCast(statement, BoundForEachStatement), rewrittenCondition, _currentMethodOrLambda)
                     Case Else
                         Throw ExceptionUtilities.UnexpectedValue(statement.Kind)
                 End Select
@@ -99,11 +101,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             If instrument Then
                 Select Case statement.Kind
                     Case BoundKind.WhileStatement
-                        ifConditionGotoStart = _instrumenter.InstrumentWhileStatementConditionalGotoStart(DirectCast(statement, BoundWhileStatement), ifConditionGotoStart)
+                        ifConditionGotoStart = _instrumenterOpt.InstrumentWhileStatementConditionalGotoStart(DirectCast(statement, BoundWhileStatement), ifConditionGotoStart)
                     Case BoundKind.DoLoopStatement
-                        ifConditionGotoStart = _instrumenter.InstrumentDoLoopStatementEntryOrConditionalGotoStart(DirectCast(statement, BoundDoLoopStatement), ifConditionGotoStart)
+                        ifConditionGotoStart = _instrumenterOpt.InstrumentDoLoopStatementEntryOrConditionalGotoStart(DirectCast(statement, BoundDoLoopStatement), ifConditionGotoStart)
                     Case BoundKind.ForEachStatement
-                        ifConditionGotoStart = _instrumenter.InstrumentForEachStatementConditionalGotoStart(DirectCast(statement, BoundForEachStatement), ifConditionGotoStart)
+                        ifConditionGotoStart = _instrumenterOpt.InstrumentForEachStatementConditionalGotoStart(DirectCast(statement, BoundForEachStatement), ifConditionGotoStart)
                     Case Else
                         Throw ExceptionUtilities.UnexpectedValue(statement.Kind)
                 End Select

@@ -1,5 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<!-- Licensed to the .NET Foundation under one or more agreements. The .NET Foundation licenses this file to you under the MIT license. See the LICENSE file in the project root for more information. -->
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
     <HasSharedItems>true</HasSharedItems>
@@ -14,12 +15,11 @@
     <Compile Include="$(MSBuildThisFileDirectory)Formatter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Formatter.TypeNames.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Formatter.Values.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Helpers\FavoritesDataItem.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helpers\TypeAndCustomInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helpers\TypeWalker.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helpers\AttributeHelpers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helpers\CustomTypeInfoTypeArgumentMap.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)IDkmClrFormatter2.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)IDkmClrFullNameProvider.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ResultProvider.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Expansion\AggregateExpansion.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Expansion\ArrayExpansion.cs" />

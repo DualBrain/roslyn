@@ -1,5 +1,8 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
+Imports System.Collections.Immutable
 Imports System.Xml.Linq
 Imports Microsoft.CodeAnalysis.CodeRefactorings
 Imports Microsoft.CodeAnalysis.CodeRefactorings.MoveType
@@ -10,16 +13,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.CodeRefactorings.M
     Public Class BasicMoveTypeTestsBase
         Inherits AbstractMoveTypeTest
 
-        Protected Overrides Function CreateWorkspaceFromFileAsync(
-            definition As String,
-            ParseOptions As ParseOptions,
-            CompilationOptions As CompilationOptions
-        ) As Task(Of TestWorkspace)
-
-            Return TestWorkspace.CreateVisualBasicAsync(
-                definition,
-                ParseOptions,
-                If(CompilationOptions, New VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary)))
+        Protected Overrides Function SetParameterDefaults(parameters As TestParameters) As TestParameters
+            Return parameters.WithCompilationOptions(If(parameters.compilationOptions, New VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary)))
         End Function
 
         Protected Overrides Function GetLanguage() As String
@@ -33,8 +28,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.CodeRefactorings.M
         Protected Overloads Function TestRenameTypeToMatchFileAsync(
             originalCode As XElement,
             Optional expectedCode As XElement = Nothing,
-            Optional expectedCodeAction As Boolean = True,
-            Optional compareTokens As Boolean = True
+            Optional expectedCodeAction As Boolean = True
         ) As Task
 
             Dim expectedText As String = Nothing
@@ -43,18 +37,17 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.CodeRefactorings.M
             End If
 
             Return MyBase.TestRenameTypeToMatchFileAsync(
-                originalCode.ConvertTestSourceTag(), expectedText, expectedCodeAction, compareTokens)
+                originalCode.ConvertTestSourceTag(), expectedText, expectedCodeAction)
         End Function
 
         Protected Overloads Function TestRenameFileToMatchTypeAsync(
             originalCode As XElement,
             Optional expectedDocumentName As String = Nothing,
-            Optional expectedCodeAction As Boolean = True,
-            Optional compareTokens As Boolean = True
+            Optional expectedCodeAction As Boolean = True
         ) As Task
 
             Return MyBase.TestRenameFileToMatchTypeAsync(
-                originalCode.ConvertTestSourceTag(), expectedDocumentName, expectedCodeAction, compareTokens)
+                originalCode.ConvertTestSourceTag(), expectedDocumentName, expectedCodeAction)
         End Function
 
         Protected Overloads Function TestMoveTypeToNewFileAsync(
@@ -62,10 +55,9 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.CodeRefactorings.M
             expectedSourceTextAfterRefactoring As XElement,
             expectedDocumentName As String,
             destinationDocumentText As XElement,
-            Optional destinationDocumentContainers As IList(Of String) = Nothing,
+            Optional destinationDocumentContainers As ImmutableArray(Of String) = Nothing,
             Optional expectedCodeAction As Boolean = True,
-            Optional index As Integer = 0,
-            Optional compareTokens As Boolean = True
+            Optional index As Integer = 0
         ) As Task
 
             Dim originalCodeText = originalCode.ConvertTestSourceTag()
@@ -79,8 +71,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.CodeRefactorings.M
                 expectedDestinationText,
                 destinationDocumentContainers,
                 expectedCodeAction,
-                index,
-                compareTokens)
+                index)
         End Function
     End Class
 End Namespace

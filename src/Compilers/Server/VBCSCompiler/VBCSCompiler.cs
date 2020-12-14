@@ -1,20 +1,33 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using Microsoft.CodeAnalysis.CommandLine;
 using System;
 using System.Collections.Specialized;
-using System.Configuration;
+using System.IO;
 
 namespace Microsoft.CodeAnalysis.CompilerServer
 {
-    internal static class VBCSCompiler 
+    internal static class VBCSCompiler
     {
         public static int Main(string[] args)
         {
+            using var logger = new CompilerServerLogger();
+
             NameValueCollection appSettings;
             try
             {
-                appSettings = ConfigurationManager.AppSettings;
+#if BOOTSTRAP
+                ExitingTraceListener.Install();
+#endif
+
+#if NET472
+                appSettings = System.Configuration.ConfigurationManager.AppSettings;
+#else
+                // Do not use AppSettings on non-desktop platforms
+                appSettings = new NameValueCollection();
+#endif
             }
             catch (Exception ex)
             {
@@ -22,11 +35,21 @@ namespace Microsoft.CodeAnalysis.CompilerServer
                 // is corrupted.  This should not prevent the server from starting, but instead just revert
                 // to the default configuration.
                 appSettings = new NameValueCollection();
-                CompilerServerLogger.LogException(ex, "Error loading application settings");
+                logger.LogException(ex, "Error loading application settings");
             }
 
-            var controller = new DesktopBuildServerController(appSettings);
-            return controller.Run(args);
+            try
+            {
+                var controller = new BuildServerController(appSettings, logger);
+                return controller.Run(args);
+            }
+            catch (Exception e)
+            {
+                // Assume the exception was the result of a missing compiler assembly.
+                logger.LogException(e, "Cannot start server");
+            }
+
+            return CommonCompiler.Failed;
         }
     }
 }

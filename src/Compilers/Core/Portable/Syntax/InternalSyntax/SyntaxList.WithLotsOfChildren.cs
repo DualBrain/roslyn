@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using Roslyn.Utilities;
@@ -10,6 +12,11 @@ namespace Microsoft.CodeAnalysis.Syntax.InternalSyntax
     {
         internal sealed class WithLotsOfChildren : WithManyChildrenBase
         {
+            static WithLotsOfChildren()
+            {
+                ObjectBinder.RegisterTypeReader(typeof(WithLotsOfChildren), r => new WithLotsOfChildren(r));
+            }
+
             private readonly int[] _childOffsets;
 
             internal WithLotsOfChildren(ArrayElement<GreenNode>[] children)
@@ -18,7 +25,7 @@ namespace Microsoft.CodeAnalysis.Syntax.InternalSyntax
                 _childOffsets = CalculateOffsets(children);
             }
 
-            internal WithLotsOfChildren(DiagnosticInfo[] diagnostics, SyntaxAnnotation[] annotations, ArrayElement<GreenNode>[] children, int[] childOffsets)
+            internal WithLotsOfChildren(DiagnosticInfo[]? diagnostics, SyntaxAnnotation[]? annotations, ArrayElement<GreenNode>[] children, int[] childOffsets)
                 : base(diagnostics, annotations, children)
             {
                 _childOffsets = childOffsets;
@@ -34,11 +41,6 @@ namespace Microsoft.CodeAnalysis.Syntax.InternalSyntax
             {
                 base.WriteTo(writer);
                 // don't write offsets out, recompute them on construction
-            }
-
-            internal override Func<ObjectReader, object> GetReader()
-            {
-                return r => new WithLotsOfChildren(r);
             }
 
             public override int GetSlotOffset(int index)
@@ -74,12 +76,12 @@ namespace Microsoft.CodeAnalysis.Syntax.InternalSyntax
                 return childOffsets;
             }
 
-            internal override GreenNode SetDiagnostics(DiagnosticInfo[] errors)
+            internal override GreenNode SetDiagnostics(DiagnosticInfo[]? errors)
             {
                 return new WithLotsOfChildren(errors, this.GetAnnotations(), children, _childOffsets);
             }
 
-            internal override GreenNode SetAnnotations(SyntaxAnnotation[] annotations)
+            internal override GreenNode SetAnnotations(SyntaxAnnotation[]? annotations)
             {
                 return new WithLotsOfChildren(GetDiagnostics(), annotations, children, _childOffsets);
             }

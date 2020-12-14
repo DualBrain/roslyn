@@ -1,9 +1,14 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 {
@@ -60,7 +65,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         {
             // Leaves are labeled statements that don't have a labeled child.
             // We also return true for non-labeled statements.
-            Label label = Classify(node.Kind(), out var isLeaf, ignoreVariableDeclarations: false);
+            var label = Classify(node.Kind(), out var isLeaf);
 
             // ignored should always be reported as leaves
             Debug.Assert(label != Label.Ignored || isLeaf);
@@ -160,7 +165,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         // internal for testing
-        internal static Label Classify(SyntaxKind kind, out bool isLeaf, bool ignoreVariableDeclarations)
+        internal static Label Classify(SyntaxKind kind, out bool isLeaf)
         {
             switch (kind)
             {
@@ -185,6 +190,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     isLeaf = false;
                     return Label.NamespaceDeclaration;
 
+                // Need to add support for records (tracked by https://github.com/dotnet/roslyn/issues/44877)
                 case SyntaxKind.ClassDeclaration:
                 case SyntaxKind.StructDeclaration:
                 case SyntaxKind.InterfaceDeclaration:
@@ -205,12 +211,12 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     return Label.FieldDeclaration;
 
                 case SyntaxKind.VariableDeclaration:
-                    isLeaf = ignoreVariableDeclarations;
-                    return ignoreVariableDeclarations ? Label.Ignored : Label.FieldVariableDeclaration;
+                    isLeaf = false;
+                    return Label.FieldVariableDeclaration;
 
                 case SyntaxKind.VariableDeclarator:
                     isLeaf = true;
-                    return ignoreVariableDeclarations ? Label.Ignored : Label.FieldVariableDeclarator;
+                    return Label.FieldVariableDeclarator;
 
                 case SyntaxKind.MethodDeclaration:
                     isLeaf = false;
@@ -300,20 +306,14 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         protected internal override int GetLabel(SyntaxNode node)
-        {
-            return (int)GetLabel(node.Kind());
-        }
+            => (int)GetLabel(node.Kind());
 
         internal static Label GetLabel(SyntaxKind kind)
-        {
-            return Classify(kind, out var isLeaf, ignoreVariableDeclarations: false);
-        }
+            => Classify(kind, out _);
 
         // internal for testing
-        internal static bool HasLabel(SyntaxKind kind, bool ignoreVariableDeclarations)
-        {
-            return Classify(kind, out var isLeaf, ignoreVariableDeclarations) != Label.Ignored;
-        }
+        internal static bool HasLabel(SyntaxKind kind)
+            => Classify(kind, out _) != Label.Ignored;
 
         protected internal override int LabelCount
         {
@@ -321,9 +321,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         protected internal override int TiedToAncestor(int label)
-        {
-            return TiedToAncestor((Label)label);
-        }
+            => TiedToAncestor((Label)label);
 
         #endregion
 
@@ -346,13 +344,22 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.RemoveAccessorDeclaration:
                     // When comparing method bodies we need to NOT ignore VariableDeclaration and VariableDeclarator children,
                     // but when comparing field definitions we should ignore VariableDeclarations children.
-                    ignoreChildFunction = childKind => HasLabel(childKind, ignoreVariableDeclarations: true);
+
+                    var leftBody = GetBody(left);
+                    var rightBody = GetBody(right);
+
+                    if (!SyntaxFactory.AreEquivalent(leftBody, rightBody, null))
+                    {
+                        return false;
+                    }
+
+                    ignoreChildFunction = childKind => childKind == SyntaxKind.Block || childKind == SyntaxKind.ArrowExpressionClause || HasLabel(childKind);
                     break;
 
                 default:
                     if (HasChildren(left))
                     {
-                        ignoreChildFunction = childKind => HasLabel(childKind, ignoreVariableDeclarations: false);
+                        ignoreChildFunction = childKind => HasLabel(childKind);
                     }
                     else
                     {
@@ -365,10 +372,20 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             return SyntaxFactory.AreEquivalent(left, right, ignoreChildFunction);
         }
 
+        private static SyntaxNode GetBody(SyntaxNode node)
+        {
+            switch (node)
+            {
+                case BaseMethodDeclarationSyntax baseMethodDeclarationSyntax: return baseMethodDeclarationSyntax.Body ?? (SyntaxNode)baseMethodDeclarationSyntax.ExpressionBody?.Expression;
+                case AccessorDeclarationSyntax accessorDeclarationSyntax: return accessorDeclarationSyntax.Body ?? (SyntaxNode)accessorDeclarationSyntax.ExpressionBody?.Expression;
+                default: throw ExceptionUtilities.UnexpectedValue(node);
+            }
+        }
+
         protected override bool TryComputeWeightedDistance(SyntaxNode leftNode, SyntaxNode rightNode, out double distance)
         {
-            SyntaxNodeOrToken? leftName = TryGetName(leftNode);
-            SyntaxNodeOrToken? rightName = TryGetName(rightNode);
+            var leftName = TryGetName(leftNode);
+            var rightName = TryGetName(rightNode);
             Debug.Assert(rightName.HasValue == leftName.HasValue);
 
             if (leftName.HasValue)
@@ -396,6 +413,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.NamespaceDeclaration:
                     return ((NamespaceDeclarationSyntax)node).Name;
 
+                // Need to add support for records (tracked by https://github.com/dotnet/roslyn/issues/44877)
                 case SyntaxKind.ClassDeclaration:
                 case SyntaxKind.StructDeclaration:
                 case SyntaxKind.InterfaceDeclaration:

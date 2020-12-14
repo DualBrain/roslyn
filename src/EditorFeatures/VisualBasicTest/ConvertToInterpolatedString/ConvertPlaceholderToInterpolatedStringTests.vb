@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.CodeRefactorings
@@ -10,7 +12,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.ConvertToInterpola
     Public Class ConvertPlaceholderToInterpolatedStringTests
         Inherits AbstractVisualBasicCodeActionTest
 
-        Protected Overrides Function CreateCodeRefactoringProvider(workspace As Workspace) As CodeRefactoringProvider
+        Protected Overrides Function CreateCodeRefactoringProvider(workspace As Workspace, parameters As TestParameters) As CodeRefactoringProvider
             Return New VisualBasicConvertPlaceholderToInterpolatedStringRefactoringProvider()
         End Function
 
@@ -28,11 +30,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{1}"
+        Dim a = $"{1 }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -49,11 +51,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{1}{2}{3}"
+        Dim a = $"{1 }{2 }{3 }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -70,11 +72,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{1}{3}{2}"
+        Dim a = $"{1 }{3 }{2 }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -91,11 +93,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{1}{1}{1}"
+        Dim a = $"{1 }{1 }{1 }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -116,7 +118,7 @@ Module T
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -133,11 +135,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{0.5}{"Hello"}{3}"
+        Dim a = $"{0.5 }{"Hello" }{3 }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -154,11 +156,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{0.5}{"Hello"}{3}"
+        Dim a = $"{0.5 }{"Hello" }{3 }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -175,11 +177,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{(New Object)}"
+        Dim a = $"{(New Object) }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -198,13 +200,11 @@ End Module</File>.ConvertTestSourceTag()
 Imports System
 Module T
     Sub M()
-        Dim a = $"{If(True,
-                              "Yes",
-                              TryCast(False, Object))}"
+        Dim a = $"{If(True, "Yes", TryCast(False, Object)) }"
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -228,7 +228,7 @@ Module T
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -249,7 +249,7 @@ Module T
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -276,12 +276,12 @@ Module T
         Dim population As Integer() = {1025632, 1105967, 1148203}
         Dim s = String.Format("{0,6} {1,15}\n\n", "Year", "Population")
         For index = 0 To years.Length - 1
-            s += $"{years(index),6} {population(index),15: N0}\n"
+            s += $"{years(index), 6} {population(index), 15: N0}\n"
         Next
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -302,7 +302,7 @@ Module T
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -349,7 +349,7 @@ Module T
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -376,7 +376,7 @@ Module T
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -408,7 +408,7 @@ And {value2,10} ({value2,8:X8})
     End Sub
 End Module</File>.ConvertTestSourceTag()
 
-            Await TestAsync(text, expected)
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
@@ -420,7 +420,7 @@ Module T
         Dim s = [|String.Format("{0}", args)|]
     End Sub
 End Module</File>.ConvertTestSourceTag()
-            Await TestMissingAsync(text)
+            Await TestMissingInRegularAndScriptAsync(text)
         End Function
 
         <WorkItem(13605, "https://github.com/dotnet/roslyn/issues/13605")>
@@ -432,7 +432,139 @@ End Module</File>.ConvertTestSourceTag()
         [|TaskAwaiter|]
     End Sub
 End Module"
-            Await TestMissingAsync(text)
+            Await TestMissingInRegularAndScriptAsync(text)
+        End Function
+
+        <WorkItem(19162, "https://github.com/dotnet/roslyn/issues/19162")>
+        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
+        Public Async Function TestFormatWithNamedArguments1() As Task
+            Dim text = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = [|String.Format(arg0:="test", arg1:="also", format:="This {0} {1} works")|]
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Dim expected = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = $"This {"test" } {"also" } works"
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Await TestInRegularAndScriptAsync(text, expected)
+        End Function
+
+        <WorkItem(19162, "https://github.com/dotnet/roslyn/issues/19162")>
+        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
+        Public Async Function TestFormatWithNamedArguments2() As Task
+            Dim text = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = [|String.Format("This {0} {1} works", arg0:="test", arg1:="also")|]
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Dim expected = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = $"This {"test" } {"also" } works"
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Await TestInRegularAndScriptAsync(text, expected)
+        End Function
+
+        <WorkItem(19162, "https://github.com/dotnet/roslyn/issues/19162")>
+        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
+        Public Async Function TestFormatWithNamedArguments3() As Task
+            Dim text = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = [|String.Format("{0} {1} {2}", "10", arg1:="11", arg2:="12")|]
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Dim expected = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = $"{"10" } {"11" } {"12" }"
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Await TestInRegularAndScriptAsync(text, expected)
+        End Function
+
+        <WorkItem(19162, "https://github.com/dotnet/roslyn/issues/19162")>
+        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
+        Public Async Function TestFormatWithNamedArguments4() As Task
+            Dim text = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = [|String.Format("{0} {1} {2}", "10", arg2:="12", arg1:="11")|]
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Dim expected = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = $"{"10" } {"11" } {"12" }"
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Await TestInRegularAndScriptAsync(text, expected)
+        End Function
+
+        <WorkItem(19162, "https://github.com/dotnet/roslyn/issues/19162")>
+        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
+        Public Async Function TestFormatWithNamedArguments5() As Task
+            Dim text = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = [|String.Format("{0} {1} {2} {3}", "10", arg1:="11", arg2:="12")|]
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Dim expected = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = $"{"10" } {"11" } {"12" } {3}"
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Await TestInRegularAndScriptAsync(text, expected)
+        End Function
+
+        <WorkItem(19162, "https://github.com/dotnet/roslyn/issues/19162")>
+        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsConvertToInterpolatedString)>
+        Public Async Function TestFormatWithNamedArguments_CaseInsensitive() As Task
+            Dim text = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = [|String.Format("{0} {1} {2}", ARg0:="10", aRg1:="11", Arg2:="12")|]
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Dim expected = <File>
+Imports System
+Module T
+    Sub M()
+        Dim a = $"{"10" } {"11" } {"12" }"
+    End Sub
+End Module</File>.ConvertTestSourceTag()
+
+            Await TestInRegularAndScriptAsync(text, expected)
         End Function
     End Class
 End Namespace

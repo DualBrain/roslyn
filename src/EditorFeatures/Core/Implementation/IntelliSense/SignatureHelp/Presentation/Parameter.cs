@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Threading;
 using Microsoft.CodeAnalysis.Shared.Extensions;
@@ -18,8 +22,8 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.SignatureHel
 
         public string Documentation => _documentation ?? (_documentation = _parameter.DocumentationFactory(CancellationToken.None).GetFullText());
         public string Name => _parameter.Name;
-        public Span Locus => new Span(_index, _contentLength);
-        public Span PrettyPrintedLocus => new Span(_prettyPrintedIndex, _contentLength);
+        public Span Locus => new(_index, _contentLength);
+        public Span PrettyPrintedLocus => new(_prettyPrintedIndex, _contentLength);
         public ISignature Signature { get; }
 
         public Parameter(

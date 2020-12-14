@@ -1,7 +1,12 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis.Diagnostics.Analyzers.NamingStyles;
 using Microsoft.CodeAnalysis.Notification;
@@ -11,19 +16,19 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
 {
     internal class NamingStyleViewModel : AbstractNotifyPropertyChanged, INamingStylesInfoDialogViewModel
     {
-        private NamingStyle _style;
+        private readonly MutableNamingStyle _style;
         private readonly INotificationService _notificationService;
 
-        public NamingStyleViewModel(NamingStyle style, bool canBeDeleted, INotificationService notificationService)
+        public NamingStyleViewModel(MutableNamingStyle style, bool canBeDeleted, INotificationService notificationService)
         {
             _notificationService = notificationService;
             _style = style;
-            this.ID = style.ID;
-            this.RequiredPrefix = style.Prefix;
-            this.RequiredSuffix = style.Suffix;
-            this.WordSeparator = style.WordSeparator;
-            this.ItemName = style.Name;
-            this.CanBeDeleted = canBeDeleted;
+            ID = style.ID;
+            RequiredPrefix = style.Prefix;
+            RequiredSuffix = style.Suffix;
+            WordSeparator = style.WordSeparator;
+            ItemName = style.Name;
+            CanBeDeleted = canBeDeleted;
 
             CapitalizationSchemes = new List<CapitalizationDisplay>
                 {
@@ -56,7 +61,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             }
         }
 
-        public Guid ID { get; internal set; }
+        public Guid ID { get; }
 
         private string _itemName;
         public string ItemName
@@ -69,7 +74,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
         {
             get
             {
-                return _style.CreateName(new[] { ServicesVSResources.example, ServicesVSResources.identifier });
+                return _style.NamingStyle.CreateName(ImmutableArray.Create(ServicesVSResources.example, ServicesVSResources.identifier));
             }
             set
             {
@@ -93,7 +98,6 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
                 }
             }
         }
-
 
         private string _requiredSuffix;
         public string RequiredSuffix
@@ -128,7 +132,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
                 }
             }
         }
-        
+
         public bool CanBeDeleted { get; set; }
 
         internal bool TrySubmit()
@@ -142,12 +146,14 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             return true;
         }
 
-        internal NamingStyle GetNamingStyle()
+        internal MutableNamingStyle GetNamingStyle()
         {
             _style.Name = ItemName;
-            _style.ID = ID;
             return _style;
         }
+
+        // For screen readers
+        public override string ToString() => ItemName;
 
         public class CapitalizationDisplay
         {
@@ -156,9 +162,13 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
 
             public CapitalizationDisplay(Capitalization capitalization, string name)
             {
-                this.Capitalization = capitalization;
-                this.Name = name;
+                Capitalization = capitalization;
+                Name = name;
             }
+
+            // For screen readers
+            public override string ToString()
+                => Name;
         }
     }
 }

@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -16,11 +20,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
         public ObservableCollection<INamingStylesInfoDialogViewModel> Items { get; set; }
         public string LanguageName { get; private set; }
 
-        public string DialogTitle => "Manage Specifications";
+        public string DialogTitle => ServicesVSResources.Manage_specifications;
 
         public ManageSymbolSpecificationsDialogViewModel(
-            ObservableCollection<SymbolSpecification> specifications, 
-            List<NamingStyleOptionPageViewModel.NamingRuleViewModel> namingRules, 
+            ObservableCollection<SymbolSpecification> specifications,
+            List<NamingStyleOptionPageViewModel.NamingRuleViewModel> namingRules,
             string languageName,
             INotificationService notificationService)
         {
@@ -34,30 +38,26 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
                 notificationService)));
         }
 
-        internal void AddSymbolSpecification(INamingStylesInfoDialogViewModel symbolSpecification)
+        internal void AddSymbolSpecification(INamingStylesInfoDialogViewModel _)
         {
-            
+
         }
 
         internal void RemoveSymbolSpecification(INamingStylesInfoDialogViewModel symbolSpecification)
-        {
-            Items.Remove(symbolSpecification);
-        }
+            => Items.Remove(symbolSpecification);
 
         public void AddItem()
         {
             var viewModel = new SymbolSpecificationViewModel(LanguageName, canBeDeleted: true, notificationService: _notificationService);
             var dialog = new SymbolSpecificationDialog(viewModel);
-            if (dialog.ShowDialog().Value == true)
+            if (dialog.ShowModal().Value == true)
             {
                 Items.Add(viewModel);
             }
         }
 
         public void RemoveItem(INamingStylesInfoDialogViewModel item)
-        {
-            Items.Remove(item);
-        }
+            => Items.Remove(item);
 
         public void EditItem(INamingStylesInfoDialogViewModel item)
         {
@@ -66,7 +66,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options.Style.N
             var symbolSpecification = ((SymbolSpecificationViewModel)item).GetSymbolSpecification();
             var viewModel = new SymbolSpecificationViewModel(LanguageName, symbolSpecification, symbolSpecificationViewModel.CanBeDeleted, _notificationService);
             var dialog = new SymbolSpecificationDialog(viewModel);
-            if (dialog.ShowDialog().Value == true)
+            if (dialog.ShowModal().Value == true)
             {
                 symbolSpecificationViewModel.ItemName = viewModel.ItemName;
                 symbolSpecificationViewModel.AccessibilityList = viewModel.AccessibilityList;

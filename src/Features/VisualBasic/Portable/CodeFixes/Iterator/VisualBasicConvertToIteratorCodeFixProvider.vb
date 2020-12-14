@@ -1,7 +1,10 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Composition
+Imports System.Diagnostics.CodeAnalysis
 Imports System.Threading
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.CodeActions
@@ -20,6 +23,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.CodeFixes.Iterator
         Friend Const BC30451 As String = "BC30451" ' error BC30451 : 'Yield' is not declared.  It may be inaccessible due its protection level.
 
         Friend Shared ReadOnly Ids As ImmutableArray(Of String) = ImmutableArray.Create(BC30451)
+
+        <ImportingConstructor>
+        <SuppressMessage("RoslynDiagnosticsReliability", "RS0033:Importing constructor should be [Obsolete]", Justification:="Used in test code: https://github.com/dotnet/roslyn/issues/42814")>
+        Public Sub New()
+        End Sub
 
         Public Overrides ReadOnly Property FixableDiagnosticIds As ImmutableArray(Of String)
             Get
@@ -54,7 +62,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.CodeFixes.Iterator
             End If
 
             ' Check that return type of containing method is convertible to IEnumerable
-            Dim ienumerableSymbol As INamedTypeSymbol = model.Compilation.GetTypeByMetadataName("System.Collections.Generic.IEnumerable`1")
+            Dim ienumerableSymbol = model.Compilation.GetTypeByMetadataName(GetType(IEnumerable(Of)).FullName)
             If ienumerableSymbol Is Nothing Then
                 Return Nothing
             End If
@@ -103,7 +111,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.CodeFixes.Iterator
         Private Shared Function AddIteratorKeywordToMethod(root As SyntaxNode, methodStatementNode As MethodStatementSyntax) As SyntaxNode
             ' Add iterator keyword
             Dim iteratorToken As SyntaxToken = Token(SyntaxKind.IteratorKeyword).WithAdditionalAnnotations(Formatter.Annotation)
-            Dim newFunctionNode As MethodStatementSyntax = Nothing
+            Dim newFunctionNode As MethodStatementSyntax
 
             ' If the iterator keyword is going to be added to the front of the method declaration,
             ' we will need to move the trivia from the method onto the keyword.

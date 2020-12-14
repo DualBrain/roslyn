@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
@@ -23,7 +25,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim syntax = TryCast(node.Syntax, TryBlockSyntax)
 
                 If syntax IsNot Nothing Then
-                    rewritten = _instrumenter.InstrumentTryStatement(node, rewritten)
+                    rewritten = _instrumenterOpt.InstrumentTryStatement(node, rewritten)
                 End If
             End If
 
@@ -114,7 +116,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim syntax = TryCast(node.Syntax, FinallyBlockSyntax)
 
                 If syntax IsNot Nothing Then
-                    newFinally = PrependWithPrologue(newFinally, _instrumenter.CreateFinallyBlockPrologue(tryStatement))
+                    newFinally = PrependWithPrologue(newFinally, _instrumenterOpt.CreateFinallyBlockPrologue(tryStatement))
                 End If
             End If
 
@@ -129,7 +131,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim syntax = TryCast(node.Syntax, TryBlockSyntax)
 
                 If syntax IsNot Nothing Then
-                    newTry = PrependWithPrologue(newTry, _instrumenter.CreateTryBlockPrologue(tryStatement))
+                    newTry = PrependWithPrologue(newTry, _instrumenterOpt.CreateTryBlockPrologue(tryStatement))
                 End If
             End If
 
@@ -151,9 +153,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         ' and associate the sequence point with whole Catch statement
                         ' EnC: We need to insert a hidden sequence point to handle function remapping in case 
                         ' the containing method is edited while methods invoked in the condition are being executed.
-                        newFilter = _instrumenter.InstrumentCatchBlockFilter(node, newFilter, _currentMethodOrLambda)
+                        newFilter = _instrumenterOpt.InstrumentCatchBlockFilter(node, newFilter, _currentMethodOrLambda)
                     Else
-                        newCatchBody = PrependWithPrologue(newCatchBody, _instrumenter.CreateCatchBlockPrologue(node))
+                        newCatchBody = PrependWithPrologue(newCatchBody, _instrumenterOpt.CreateCatchBlockPrologue(node))
                     End If
                 End If
             End If

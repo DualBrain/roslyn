@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
@@ -6,13 +10,15 @@ using System.ComponentModel;
 using System.ComponentModel.Composition;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis.CodeStyle;
+using Microsoft.CodeAnalysis.Diagnostics.Analyzers.NamingStyles;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
+using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.CodeAnalysis.Options;
-using Microsoft.CodeAnalysis.Options.Providers;
-using Microsoft.VisualStudio.LanguageServices.Implementation.LanguageService;
+using Microsoft.VisualStudio.LanguageServices.Setup;
 using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell;
 using Roslyn.Utilities;
@@ -37,51 +43,92 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
         /// if a later change happens, we know to refresh that value. This is synchronized with monitor locks on
         /// <see cref="_optionsToMonitorForChangesGate" />.
         /// </summary>
-        private readonly Dictionary<string, List<OptionKey>> _optionsToMonitorForChanges = new Dictionary<string, List<OptionKey>>();
-        private readonly object _optionsToMonitorForChangesGate = new object();
+        private readonly Dictionary<string, List<OptionKey>> _optionsToMonitorForChanges = new();
+        private readonly object _optionsToMonitorForChangesGate = new();
 
-        /// <remarks>We make sure this code is from the UI by asking for all serializers on the UI thread in <see cref="HACK_AbstractCreateServicesOnUiThread"/>.</remarks>
+        /// <remarks>
+        /// We make sure this code is from the UI by asking for all <see cref="IOptionPersister"/> in <see cref="RoslynPackage.InitializeAsync"/>
+        /// </remarks>
         [ImportingConstructor]
-        public RoamingVisualStudioProfileOptionPersister(IGlobalOptionService globalOptionService, [Import(typeof(SVsServiceProvider))] IServiceProvider serviceProvider)
-            : base(assertIsForeground: true) // The GetService call requires being on the UI thread or else it will marshal and risk deadlock
+        [Obsolete(MefConstruction.ImportingConstructorMessage, error: true)]
+        public RoamingVisualStudioProfileOptionPersister(IThreadingContext threadingContext, IGlobalOptionService globalOptionService, [Import(typeof(SVsServiceProvider))] IServiceProvider serviceProvider)
+            : base(threadingContext, assertIsForeground: true) // The GetService call requires being on the UI thread or else it will marshal and risk deadlock
         {
             Contract.ThrowIfNull(globalOptionService);
 
-            this._settingManager = (ISettingsManager)serviceProvider.GetService(typeof(SVsSettingsPersistenceManager));
+            _settingManager = (ISettingsManager)serviceProvider.GetService(typeof(SVsSettingsPersistenceManager));
             _globalOptionService = globalOptionService;
 
             // While the settings persistence service should be available in all SKUs it is possible an ISO shell author has undefined the
             // contributing package. In that case persistence of settings won't work (we don't bother with a backup solution for persistence
             // as the scenario seems exceedingly unlikely), but we shouldn't crash the IDE.
-            if (this._settingManager != null)
+            if (_settingManager != null)
             {
-                ISettingsSubset settingsSubset = this._settingManager.GetSubset("*");
+                var settingsSubset = _settingManager.GetSubset("*");
                 settingsSubset.SettingChangedAsync += OnSettingChangedAsync;
             }
         }
 
         private System.Threading.Tasks.Task OnSettingChangedAsync(object sender, PropertyChangedEventArgs args)
         {
+            List<OptionKey> optionsToRefresh = null;
+
             lock (_optionsToMonitorForChangesGate)
             {
-                if (_optionsToMonitorForChanges.TryGetValue(args.PropertyName, out var optionsToRefresh))
+                if (_optionsToMonitorForChanges.TryGetValue(args.PropertyName, out var optionsToRefreshInsideLock))
                 {
-                    foreach (var optionToRefresh in optionsToRefresh)
+                    // Make a copy of the list so we aren't using something that might mutate underneath us.
+                    optionsToRefresh = optionsToRefreshInsideLock.ToList();
+                }
+            }
+
+            if (optionsToRefresh != null)
+            {
+                // Refresh the actual options outside of our _optionsToMonitorForChangesGate so we avoid any deadlocks by calling back
+                // into the global option service under our lock. There isn't some race here where if we were fetching an option for the first time
+                // while the setting was changed we might not refresh it. Why? We call RecordObservedValueToWatchForChanges before we fetch the value
+                // and since this event is raised after the setting is modified, any new setting would have already been observed in GetFirstOrDefaultValue.
+                // And if it wasn't, this event will then refresh it.
+                foreach (var optionToRefresh in optionsToRefresh)
+                {
+                    if (TryFetch(optionToRefresh, out var optionValue))
                     {
-                        if (TryFetch(optionToRefresh, out var optionValue))
-                        {
-                            _globalOptionService.RefreshOption(optionToRefresh, optionValue);
-                        }
+                        _globalOptionService.RefreshOption(optionToRefresh, optionValue);
                     }
                 }
             }
 
-            return SpecializedTasks.EmptyTask;
+            return System.Threading.Tasks.Task.CompletedTask;
+        }
+
+        private object GetFirstOrDefaultValue(OptionKey optionKey, IEnumerable<RoamingProfileStorageLocation> roamingSerializations)
+        {
+            // There can be more than 1 roaming location in the order of their priority.
+            // When fetching a value, we iterate all of them until we find the first one that exists.
+            // When persisting a value, we always use the first location.
+            // This functionality exists for breaking changes to persistence of some options. In such a case, there
+            // will be a new location added to the beginning with a new name. When fetching a value, we might find the old
+            // location (and can upgrade the value accordingly) but we only write to the new location so that
+            // we don't interfere with older versions. This will essentially "fork" the user's options at the time of upgrade.
+
+            foreach (var roamingSerialization in roamingSerializations)
+            {
+                var storageKey = roamingSerialization.GetKeyNameForLanguage(optionKey.Language);
+
+                RecordObservedValueToWatchForChanges(optionKey, storageKey);
+
+                if (_settingManager.TryGetValue(storageKey, out object value) == GetValueResult.Success)
+                {
+                    return value;
+                }
+            }
+
+            return optionKey.Option.DefaultValue;
         }
 
         public bool TryFetch(OptionKey optionKey, out object value)
         {
-            if (this._settingManager == null)
+            if (_settingManager == null)
             {
                 Debug.Fail("Manager field is unexpectedly null.");
                 value = null;
@@ -89,19 +136,15 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
             }
 
             // Do we roam this at all?
-            var roamingSerialization = optionKey.Option.StorageLocations.OfType<RoamingProfileStorageLocation>().SingleOrDefault();
+            var roamingSerializations = optionKey.Option.StorageLocations.OfType<RoamingProfileStorageLocation>();
 
-            if (roamingSerialization == null)
+            if (!roamingSerializations.Any())
             {
                 value = null;
                 return false;
             }
 
-            var storageKey = roamingSerialization.GetKeyNameForLanguage(optionKey.Language);
-
-            RecordObservedValueToWatchForChanges(optionKey, storageKey);
-
-            value = this._settingManager.GetValueOrDefault(storageKey, optionKey.Option.DefaultValue);
+            value = GetFirstOrDefaultValue(optionKey, roamingSerializations);
 
             // VS's ISettingsManager has some quirks around storing enums.  Specifically,
             // it *can* persist and retrieve enums, but only if you properly call 
@@ -119,22 +162,77 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
                     value = Enum.ToObject(optionKey.Option.Type, value);
                 }
             }
-            else if (optionKey.Option.Type == typeof(CodeStyleOption<bool>))
+            else if (typeof(ICodeStyleOption).IsAssignableFrom(optionKey.Option.Type))
+            {
+                return DeserializeCodeStyleOption(ref value, optionKey.Option.Type);
+            }
+            else if (optionKey.Option.Type == typeof(NamingStylePreferences))
             {
                 // We store these as strings, so deserialize
-                var serializedValue = value as string;
-
-                if (serializedValue != null)
+                if (value is string serializedValue)
                 {
-                    value = CodeStyleOption<bool>.FromXElement(XElement.Parse(serializedValue));
+                    try
+                    {
+                        value = NamingStylePreferences.FromXElement(XElement.Parse(serializedValue));
+                    }
+                    catch (Exception)
+                    {
+                        value = null;
+                        return false;
+                    }
                 }
                 else
                 {
-                    value = optionKey.Option.DefaultValue;
+                    value = null;
+                    return false;
                 }
+            }
+            else if (optionKey.Option.Type == typeof(bool) && value is int intValue)
+            {
+                // TypeScript used to store some booleans as integers. We now handle them properly for legacy sync scenarios.
+                value = intValue != 0;
+                return true;
+            }
+            else if (optionKey.Option.Type == typeof(bool) && value is long longValue)
+            {
+                // TypeScript used to store some booleans as integers. We now handle them properly for legacy sync scenarios.
+                value = longValue != 0;
+                return true;
+            }
+            else if (optionKey.Option.Type == typeof(bool?))
+            {
+                // code uses object to hold onto any value which will use boxing on value types.
+                // see boxing on nullable types - https://msdn.microsoft.com/en-us/library/ms228597.aspx
+                return (value is bool) || (value == null);
+            }
+            else if (value != null && optionKey.Option.Type != value.GetType())
+            {
+                // We got something back different than we expected, so fail to deserialize
+                value = null;
+                return false;
             }
 
             return true;
+        }
+
+        private bool DeserializeCodeStyleOption(ref object value, Type type)
+        {
+            if (value is string serializedValue)
+            {
+                try
+                {
+                    var fromXElement = type.GetMethod(nameof(CodeStyleOption<object>.FromXElement), BindingFlags.Public | BindingFlags.Static);
+
+                    value = fromXElement.Invoke(null, new object[] { XElement.Parse(serializedValue) });
+                    return true;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            value = null;
+            return false;
         }
 
         private void RecordObservedValueToWatchForChanges(OptionKey optionKey, string storageKey)
@@ -153,18 +251,17 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
 
         public bool TryPersist(OptionKey optionKey, object value)
         {
-            if (this._settingManager == null)
+            if (_settingManager == null)
             {
                 Debug.Fail("Manager field is unexpectedly null.");
                 return false;
             }
 
             // Do we roam this at all?
-            var roamingSerialization = optionKey.Option.StorageLocations.OfType<RoamingProfileStorageLocation>().SingleOrDefault();
+            var roamingSerialization = optionKey.Option.StorageLocations.OfType<RoamingProfileStorageLocation>().FirstOrDefault();
 
             if (roamingSerialization == null)
             {
-                value = null;
                 return false;
             }
 
@@ -172,18 +269,23 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
 
             RecordObservedValueToWatchForChanges(optionKey, storageKey);
 
-            if (optionKey.Option.Type == typeof(CodeStyleOption<bool>))
+            if (value is ICodeStyleOption codeStyleOption)
             {
                 // We store these as strings, so serialize
-                var valueToSerialize = value as CodeStyleOption<bool>;
+                value = codeStyleOption.ToXElement().ToString();
+            }
+            else if (optionKey.Option.Type == typeof(NamingStylePreferences))
+            {
+                // We store these as strings, so serialize
+                var valueToSerialize = value as NamingStylePreferences;
 
                 if (value != null)
                 {
-                    value = valueToSerialize.ToXElement().ToString();
+                    value = valueToSerialize.CreateXElement().ToString();
                 }
             }
 
-            this._settingManager.SetValueAsync(storageKey, value, isMachineLocal: false);
+            _settingManager.SetValueAsync(storageKey, value, isMachineLocal: false);
             return true;
         }
     }

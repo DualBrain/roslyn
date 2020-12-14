@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 using System.Threading;
@@ -23,15 +27,12 @@ namespace Microsoft.CodeAnalysis.Editing
         /// <summary>
         /// The <see cref="Solution"/> that was specified when the <see cref="SolutionEditor"/> was constructed.
         /// </summary>
-        public Solution OriginalSolution
-        {
-            get { return _solution; }
-        }
+        public Solution OriginalSolution => _solution;
 
         /// <summary>
         /// Gets the <see cref="DocumentEditor"/> for the corresponding <see cref="DocumentId"/>.
         /// </summary>
-        public async Task<DocumentEditor> GetDocumentEditorAsync(DocumentId id, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<DocumentEditor> GetDocumentEditorAsync(DocumentId id, CancellationToken cancellationToken = default)
         {
             if (!_documentEditors.TryGetValue(id, out var editor))
             {

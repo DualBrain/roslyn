@@ -1,10 +1,15 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using Microsoft.CodeAnalysis.PooledObjects;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -147,11 +152,22 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
         protected void Reset(ref ResetPoint point)
         {
-            _mode = point.Mode;
             var offset = point.Position - _firstToken;
+            Debug.Assert(offset >= 0);
+
+            if (offset >= _tokenCount)
+            {
+                // Re-fetch tokens to the position in the reset point
+                PeekToken(offset - _tokenOffset);
+
+                // Re-calculate new offset in case tokens got shifted to the left while we were peeking. 
+                offset = point.Position - _firstToken;
+            }
+
+            _mode = point.Mode;
             Debug.Assert(offset >= 0 && offset < _tokenCount);
             _tokenOffset = offset;
-            _currentToken = default(SyntaxToken);
+            _currentToken = null;
             _currentNode = default(BlendedNode);
             _prevTokenTrailingTrivia = point.PrevTokenTrailingTrivia;
             if (_blendedTokens != null)
@@ -207,7 +223,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     Debug.Assert(_allowModeReset);
 
                     _mode = value;
-                    _currentToken = default(SyntaxToken);
+                    _currentToken = null;
                     _currentNode = default(BlendedNode);
                     _tokenCount = _tokenOffset;
                 }
@@ -275,7 +291,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             // erase current state
             _currentNode = default(BlendedNode);
-            _currentToken = default(SyntaxToken);
+            _currentToken = null;
 
             return result;
         }
@@ -332,7 +348,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         }
 
         // adds token to end of current token array
-        private void AddToken(BlendedNode tokenResult)
+        private void AddToken(in BlendedNode tokenResult)
         {
             Debug.Assert(tokenResult.Token != null);
             if (_tokenCount >= _blendedTokens.Length)
@@ -438,11 +454,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             return ct;
         }
 
+        /// <summary>
+        /// Returns and consumes the current token if it has the requested <paramref name="kind"/>.
+        /// Otherwise, returns <see langword="null"/>.
+        /// </summary>
+        protected SyntaxToken TryEatToken(SyntaxKind kind)
+            => this.CurrentToken.Kind == kind ? this.EatToken() : null;
+
         private void MoveToNextToken()
         {
             _prevTokenTrailingTrivia = _currentToken.GetTrailingTrivia();
 
-            _currentToken = default(SyntaxToken);
+            _currentToken = null;
 
             if (_blendedTokens != null)
             {
@@ -472,6 +495,22 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             //slow part of EatToken(SyntaxKind kind)
             return CreateMissingToken(kind, this.CurrentToken.Kind, reportError: true);
+        }
+
+        // Consume a token if it is the right kind. Otherwise skip a token and replace it with one of the correct kind.
+        protected SyntaxToken EatTokenAsKind(SyntaxKind expected)
+        {
+            Debug.Assert(SyntaxFacts.IsAnyToken(expected));
+
+            var ct = this.CurrentToken;
+            if (ct.Kind == expected)
+            {
+                MoveToNextToken();
+                return ct;
+            }
+
+            var replacement = CreateMissingToken(expected, this.CurrentToken.Kind, reportError: true);
+            return AddTrailingSkippedSyntax(replacement, this.EatToken());
         }
 
         private SyntaxToken CreateMissingToken(SyntaxKind expected, SyntaxKind actual, bool reportError)
@@ -812,6 +851,16 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             return SyntaxFirstTokenReplacer.Replace(node, oldToken, newToken, skippedSyntax.FullWidth);
         }
 
+        protected void AddTrailingSkippedSyntax(SyntaxListBuilder list, GreenNode skippedSyntax)
+        {
+            list[list.Count - 1] = AddTrailingSkippedSyntax((CSharpSyntaxNode)list[list.Count - 1], skippedSyntax);
+        }
+
+        protected void AddTrailingSkippedSyntax<TNode>(SyntaxListBuilder<TNode> list, GreenNode skippedSyntax) where TNode : CSharpSyntaxNode
+        {
+            list[list.Count - 1] = AddTrailingSkippedSyntax(list[list.Count - 1], skippedSyntax);
+        }
+
         protected TNode AddTrailingSkippedSyntax<TNode>(TNode node, GreenNode skippedSyntax) where TNode : CSharpSyntaxNode
         {
             var token = node as SyntaxToken;
@@ -1010,11 +1059,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             return token;
         }
 
+        protected static SyntaxToken ConvertToIdentifier(SyntaxToken token)
+        {
+            Debug.Assert(!token.IsMissing);
+            return SyntaxToken.Identifier(token.Kind, token.LeadingTrivia.Node, token.Text, token.ValueText, token.TrailingTrivia.Node);
+        }
+
         internal DirectiveStack Directives
         {
             get { return lexer.Directives; }
         }
 
+#nullable enable
         /// <remarks>
         /// NOTE: we are specifically diverging from dev11 to improve the user experience.
         /// Since treating the "async" keyword as an identifier in older language
@@ -1026,45 +1082,37 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             where TNode : GreenNode
         {
             LanguageVersion availableVersion = this.Options.LanguageVersion;
+            LanguageVersion requiredVersion = feature.RequiredVersion();
 
-            if (feature == MessageID.IDS_FeatureModuleAttrLoc)
+            // There are special error codes for some features, so handle those separately.
+            switch (feature)
             {
-                // There's a special error code for this feature, so handle it separately.
-                return availableVersion >= LanguageVersion.CSharp2
-                    ? node
-                    : this.AddError(node, ErrorCode.WRN_NonECMAFeature, feature.Localize());
+                case MessageID.IDS_FeatureModuleAttrLoc:
+                    return availableVersion >= LanguageVersion.CSharp2
+                        ? node
+                        : this.AddError(node, ErrorCode.WRN_NonECMAFeature, feature.Localize());
+
+                case MessageID.IDS_FeatureAltInterpolatedVerbatimStrings:
+                    return availableVersion >= requiredVersion
+                        ? node
+                        : this.AddError(node, ErrorCode.ERR_AltInterpolatedVerbatimStringsNotAvailable,
+                            new CSharpRequiredLanguageVersion(requiredVersion));
             }
 
-            if (IsFeatureEnabled(feature))
-            {
-                return node;
-            }
-
-            var featureName = feature.Localize();
-            var requiredFeature = feature.RequiredFeature();
-            if (requiredFeature != null)
+            var info = feature.GetFeatureAvailabilityDiagnosticInfo(this.Options);
+            if (info != null)
             {
                 if (forceWarning)
                 {
-                    SyntaxDiagnosticInfo rawInfo = new SyntaxDiagnosticInfo(ErrorCode.ERR_FeatureIsExperimental, featureName, requiredFeature);
-                    return this.AddError(node, ErrorCode.WRN_ErrorOverride, rawInfo, rawInfo.Code);
+                    return AddError(node, ErrorCode.WRN_ErrorOverride, info, (int)info.Code);
                 }
 
-                return this.AddError(node, ErrorCode.ERR_FeatureIsExperimental, featureName, requiredFeature);
+                return AddError(node, info.Code, info.Arguments);
             }
-            else
-            {
-                var requiredVersion = feature.RequiredVersion();
 
-                if (forceWarning)
-                {
-                    SyntaxDiagnosticInfo rawInfo = new SyntaxDiagnosticInfo(availableVersion.GetErrorCode(), featureName, requiredVersion.Localize());
-                    return this.AddError(node, ErrorCode.WRN_ErrorOverride, rawInfo, rawInfo.Code);
-                }
-
-                return this.AddError(node, availableVersion.GetErrorCode(), featureName, requiredVersion.Localize());
-            }
+            return node;
         }
+#nullable disable
 
         protected bool IsFeatureEnabled(MessageID feature)
         {
@@ -1072,14 +1120,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         }
 
         /// <summary>
-        /// Whenever parsing in a `while (true)` loop and a bug could prevent the loop from making progress,
+        /// Whenever parsing in a <c>while (true)</c> loop and a bug could prevent the loop from making progress,
         /// this method can prevent the parsing from hanging.
         /// Use as:
         ///     int tokenProgress = -1;
         ///     while (IsMakingProgress(ref tokenProgress))
         /// It should be used as a guardrail, not as a crutch, so it asserts if no progress was made.
         /// </summary>
-        protected bool IsMakingProgress(ref int lastTokenPosition)
+        protected bool IsMakingProgress(ref int lastTokenPosition, bool assertIfFalse = true)
         {
             var pos = CurrentTokenPosition;
             if (pos > lastTokenPosition)
@@ -1088,7 +1136,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 return true;
             }
 
-            Debug.Assert(false);
+            Debug.Assert(!assertIfFalse);
             return false;
         }
 

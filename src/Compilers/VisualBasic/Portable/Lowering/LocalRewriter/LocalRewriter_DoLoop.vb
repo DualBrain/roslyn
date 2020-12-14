@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
@@ -82,7 +84,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             Dim instrument = Me.Instrument(node)
             If instrument AndAlso syntax.LoopStatement IsNot Nothing Then
-                rewrittenBody = Concat(rewrittenBody, _instrumenter.InstrumentDoLoopEpilogue(node, Nothing))
+                rewrittenBody = Concat(rewrittenBody, _instrumenterOpt.InstrumentDoLoopEpilogue(node, Nothing))
             End If
 
             Dim conditionResumeTarget As ImmutableArray(Of BoundStatement) = Nothing
@@ -108,7 +110,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             ' EnC: We need to insert a hidden sequence point to handle function remapping in case 
             ' the containing method is edited while methods invoked in the condition are being executed.
             If rewrittenBottomCondition IsNot Nothing AndAlso instrument Then
-                rewrittenBottomCondition = _instrumenter.InstrumentDoLoopStatementCondition(node, rewrittenBottomCondition, _currentMethodOrLambda)
+                rewrittenBottomCondition = _instrumenterOpt.InstrumentDoLoopStatementCondition(node, rewrittenBottomCondition, _currentMethodOrLambda)
             End If
 
             Dim ifConditionGotoStart As BoundStatement = New BoundConditionalGoto(
@@ -124,7 +126,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             If instrument Then
                 Return New BoundStatementList(node.Syntax, ImmutableArray.Create(
                         start,
-                        _instrumenter.InstrumentDoLoopStatementEntryOrConditionalGotoStart(node, Nothing),
+                        _instrumenterOpt.InstrumentDoLoopStatementEntryOrConditionalGotoStart(node, Nothing),
                         rewrittenBody,
                         New BoundLabelStatement(syntax.DoStatement, node.ContinueLabel),
                         ifConditionGotoStart,
@@ -172,7 +174,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             Dim instrument = Me.Instrument(node)
             If instrument AndAlso syntax.LoopStatement IsNot Nothing Then
-                loopResumeLabel = _instrumenter.InstrumentDoLoopEpilogue(node, loopResumeLabel)
+                loopResumeLabel = _instrumenterOpt.InstrumentDoLoopEpilogue(node, loopResumeLabel)
             End If
 
             rewrittenBody = Concat(rewrittenBody, loopResumeLabel)
@@ -192,7 +194,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             If instrument Then
                 Return New BoundStatementList(syntax, ImmutableArray.Create(
                         start,
-                        _instrumenter.InstrumentDoLoopStatementEntryOrConditionalGotoStart(node, Nothing),
+                        _instrumenterOpt.InstrumentDoLoopStatementEntryOrConditionalGotoStart(node, Nothing),
                         rewrittenBody,
                         New BoundLabelStatement(syntax.DoStatement, node.ContinueLabel),
                         New BoundGotoStatement(syntax.DoStatement, startLabel, Nothing),

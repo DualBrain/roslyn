@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
@@ -12,10 +16,10 @@ namespace Microsoft.CodeAnalysis.Differencing
     {
         private const double ExactMatchDistance = 0.0;
         private const double EpsilonDistance = 0.00001;
-        private const double MatchingDistance1 = 0.5;
-        private const double MatchingDistance2 = 1.0;
-        private const double MatchingDistance3 = 1.5;
-        private const double MaxDistance = 2.0;
+        private const double MatchingDistance1 = 0.25;
+        private const double MatchingDistance2 = 0.5;
+        private const double MatchingDistance3 = 0.75;
+        private const double MaxDistance = 1.0;
 
         private readonly TreeComparer<TNode> _comparer;
         private readonly TNode _root1;
@@ -30,9 +34,9 @@ namespace Microsoft.CodeAnalysis.Differencing
             _root2 = root2;
             _comparer = comparer;
 
-            int labelCount = comparer.LabelCount;
-            CategorizeNodesByLabels(comparer, root1, labelCount, out var nodes1, out var count1);
-            CategorizeNodesByLabels(comparer, root2, labelCount, out var nodes2, out var count2);
+            var labelCount = comparer.LabelCount;
+            CategorizeNodesByLabels(comparer, root1, labelCount, out var nodes1, out _);
+            CategorizeNodesByLabels(comparer, root2, labelCount, out var nodes2, out _);
 
             _oneToTwo = new Dictionary<TNode, TNode>();
             _twoToOne = new Dictionary<TNode, TNode>();
@@ -75,15 +79,15 @@ namespace Microsoft.CodeAnalysis.Differencing
             out int totalCount)
         {
             nodes = new List<TNode>[labelCount];
-            int count = 0;
+            var count = 0;
 
             // It is important that we add the nodes in depth-first prefix order.
             // This order ensures that a node of a certain kind can have a parent of the same kind 
             // and we can still use tied-to-parent for that kind. That's because the parent will always
             // be processed earlier than the child due to depth-first prefix ordering.
-            foreach (TNode node in comparer.GetDescendants(root))
+            foreach (var node in comparer.GetDescendants(root))
             {
-                int label = comparer.GetLabel(node);
+                var label = comparer.GetLabel(node);
                 if (label < 0 || label >= labelCount)
                 {
                     throw new InvalidOperationException(string.Format(WorkspacesResources.Label_for_node_0_is_invalid_it_must_be_within_bracket_0_1, node, labelCount));
@@ -138,7 +142,7 @@ namespace Microsoft.CodeAnalysis.Differencing
             //    We first try to match nodes of the same labels to the exactly matching or almost matching counterparts.
             //    The we keep increasing the threshold and keep adding matches. 
 
-            for (int l = 0; l < nodes1.Length; l++)
+            for (var l = 0; l < nodes1.Length; l++)
             {
                 if (nodes1[l] != null && nodes2[l] != null)
                 {
@@ -149,12 +153,12 @@ namespace Microsoft.CodeAnalysis.Differencing
 
         private void ComputeMatchForLabel(int label, List<TNode> s1, List<TNode> s2)
         {
-            int tiedToAncestor = _comparer.TiedToAncestor(label);
+            var tiedToAncestor = _comparer.TiedToAncestor(label);
 
             ComputeMatchForLabel(s1, s2, tiedToAncestor, EpsilonDistance);     // almost exact match
             ComputeMatchForLabel(s1, s2, tiedToAncestor, MatchingDistance1);   // ok match
             ComputeMatchForLabel(s1, s2, tiedToAncestor, MatchingDistance2);   // ok match
-            ComputeMatchForLabel(s1, s2, tiedToAncestor, MatchingDistance3);   // ok match 
+            ComputeMatchForLabel(s1, s2, tiedToAncestor, MatchingDistance3);   // ok match
             ComputeMatchForLabel(s1, s2, tiedToAncestor, MaxDistance);         // any match
         }
 
@@ -168,13 +172,14 @@ namespace Microsoft.CodeAnalysis.Differencing
             // So in the case of totally matching sequences, we process them in O(n) - 
             // both node1 and firstNonMatch2 will be advanced simultaneously.
 
-            int count1 = s1.Count;
-            int count2 = s2.Count;
-            int firstNonMatch2 = 0;
+            Debug.Assert(maxAcceptableDistance >= ExactMatchDistance && maxAcceptableDistance <= MaxDistance);
+            var count1 = s1.Count;
+            var count2 = s2.Count;
+            var firstNonMatch2 = 0;
 
-            for (int i1 = 0; i1 < count1; i1++)
+            for (var i1 = 0; i1 < count1; i1++)
             {
-                TNode node1 = s1[i1];
+                var node1 = s1[i1];
 
                 // Skip this guy if it already has a partner
                 if (HasPartnerInTree2(node1))
@@ -184,13 +189,13 @@ namespace Microsoft.CodeAnalysis.Differencing
 
                 // Find node2 that matches node1 the best, i.e. has minimal distance.
 
-                double bestDistance = MaxDistance;
-                TNode bestMatch = default(TNode);
-                bool matched = false;
+                var bestDistance = MaxDistance * 2;
+                TNode bestMatch = default;
+                var matched = false;
                 int i2;
                 for (i2 = firstNonMatch2; i2 < count2; i2++)
                 {
-                    TNode node2 = s2[i2];
+                    var node2 = s2[i2];
 
                     // Skip this guy if it already has a partner
                     if (HasPartnerInTree1(node2))
@@ -226,7 +231,7 @@ namespace Microsoft.CodeAnalysis.Differencing
                     // Now, we have no other choice than comparing the node "values"
                     // and looking for the one with the smaller distance.
 
-                    double distance = _comparer.GetDistance(node1, node2);
+                    var distance = _comparer.GetDistance(node1, node2);
                     if (distance < bestDistance)
                     {
                         matched = true;
@@ -247,7 +252,7 @@ namespace Microsoft.CodeAnalysis.Differencing
 
                 if (matched && bestDistance <= maxAcceptableDistance)
                 {
-                    bool added = TryAdd(node1, bestMatch);
+                    var added = TryAdd(node1, bestMatch);
 
                     // We checked above that node1 doesn't have a partner. 
                     // The map is a bijection by construction, so we should be able to add the mapping.
@@ -257,6 +262,11 @@ namespace Microsoft.CodeAnalysis.Differencing
                     if (i2 == firstNonMatch2)
                     {
                         firstNonMatch2 = i2 + 1;
+                    }
+
+                    if (firstNonMatch2 == count2)
+                    {
+                        return;
                     }
                 }
             }
@@ -279,7 +289,7 @@ namespace Microsoft.CodeAnalysis.Differencing
 
         internal bool TryGetPartnerInTree1(TNode node2, out TNode partner1)
         {
-            bool result = _twoToOne.TryGetValue(node2, out partner1);
+            var result = _twoToOne.TryGetValue(node2, out partner1);
             Debug.Assert(_comparer.TreesEqual(node2, _root2));
             Debug.Assert(!result || _comparer.TreesEqual(partner1, _root1));
             return result;
@@ -293,7 +303,7 @@ namespace Microsoft.CodeAnalysis.Differencing
 
         internal bool TryGetPartnerInTree2(TNode node1, out TNode partner2)
         {
-            bool result = _oneToTwo.TryGetValue(node1, out partner2);
+            var result = _oneToTwo.TryGetValue(node1, out partner2);
             Debug.Assert(_comparer.TreesEqual(node1, _root1));
             Debug.Assert(!result || _comparer.TreesEqual(partner2, _root2));
             return result;
@@ -311,29 +321,11 @@ namespace Microsoft.CodeAnalysis.Differencing
             return TryGetPartnerInTree2(node1, out var partner2) && node2.Equals(partner2);
         }
 
-        public TreeComparer<TNode> Comparer
-        {
-            get
-            {
-                return _comparer;
-            }
-        }
+        public TreeComparer<TNode> Comparer => _comparer;
 
-        public TNode OldRoot
-        {
-            get
-            {
-                return _root1;
-            }
-        }
+        public TNode OldRoot => _root1;
 
-        public TNode NewRoot
-        {
-            get
-            {
-                return _root2;
-            }
-        }
+        public TNode NewRoot => _root2;
 
         public IReadOnlyDictionary<TNode, TNode> Matches
         {
@@ -352,23 +344,17 @@ namespace Microsoft.CodeAnalysis.Differencing
         }
 
         public bool TryGetNewNode(TNode oldNode, out TNode newNode)
-        {
-            return _oneToTwo.TryGetValue(oldNode, out newNode);
-        }
+            => _oneToTwo.TryGetValue(oldNode, out newNode);
 
         public bool TryGetOldNode(TNode newNode, out TNode oldNode)
-        {
-            return _twoToOne.TryGetValue(newNode, out oldNode);
-        }
+            => _twoToOne.TryGetValue(newNode, out oldNode);
 
         /// <summary>
         /// Returns an edit script (a sequence of edits) that transform <see cref="OldRoot"/> subtree 
         /// to <see cref="NewRoot"/> subtree.
         /// </summary>
         public EditScript<TNode> GetTreeEdits()
-        {
-            return new EditScript<TNode>(this);
-        }
+            => new(this);
 
         /// <summary>
         /// Returns an edit script (a sequence of edits) that transform a sequence of nodes <paramref name="oldNodes"/>

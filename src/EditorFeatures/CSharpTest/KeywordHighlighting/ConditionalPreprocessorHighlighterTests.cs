@@ -1,18 +1,21 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+#nullable disable
+
+using System;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.CSharp.KeywordHighlighting.KeywordHighlighters;
-using Roslyn.Test.Utilities;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Xunit;
 
 namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 {
     public class ConditionalPreprocessorHighlighterTests : AbstractCSharpKeywordHighlighterTests
     {
-        internal override IHighlighter CreateHighlighter()
-        {
-            return new ConditionalPreprocessorHighlighter();
-        }
+        internal override Type GetHighlighterType()
+            => typeof(ConditionalPreprocessorHighlighter);
 
         [Fact, Trait(Traits.Feature, Traits.Features.KeywordHighlighting)]
         public async Task TestExample1_1()
@@ -177,12 +180,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 {
     void M()
     {
-#define Foo1
-#define Foo2
+#define Goo1
+#define Goo2
 
-{|Cursor:[|#if|]|} Foo1
+{|Cursor:[|#if|]|} Goo1
 
-[|#elif|] Foo2
+[|#elif|] Goo2
 
 [|#else|]
 
@@ -199,12 +202,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 {
     void M()
     {
-#define Foo1
-#define Foo2
+#define Goo1
+#define Goo2
 
-[|#if|] Foo1
+[|#if|] Goo1
 
-{|Cursor:[|#elif|]|} Foo2
+{|Cursor:[|#elif|]|} Goo2
 
 [|#else|]
 
@@ -221,12 +224,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 {
     void M()
     {
-#define Foo1
-#define Foo2
+#define Goo1
+#define Goo2
 
-[|#if|] Foo1
+[|#if|] Goo1
 
-[|#elif|] Foo2
+[|#elif|] Goo2
 
 {|Cursor:[|#else|]|}
 
@@ -243,12 +246,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 {
     void M()
     {
-#define Foo1
-#define Foo2
+#define Goo1
+#define Goo2
 
-[|#if|] Foo1
+[|#if|] Goo1
 
-[|#elif|] Foo2
+[|#elif|] Goo2
 
 [|#else|]
 

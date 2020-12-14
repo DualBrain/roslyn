@@ -1,7 +1,11 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Threading.Tasks;
-using Roslyn.Test.Utilities;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Xunit;
 using ImplementInterfaceCodeAction = Microsoft.CodeAnalysis.ImplementInterface.AbstractImplementInterfaceService.ImplementInterfaceCodeAction;
 
@@ -16,8 +20,6 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.ImplementInterface
         [Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)]
         public async Task TestFixAllInDocument()
         {
-            var fixAllActionEquivalenceKey = ImplementInterfaceCodeAction.GetCodeActionEquivalenceKey("Assembly1", "global::I1", explicitly: false, abstractly: false, throughMember: null, codeActionTypeName: typeof(ImplementInterfaceCodeAction).FullName);
-
             var input = @"
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
@@ -65,8 +67,6 @@ class B3 : I1, I2
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
         <Document>
-using System;
-
 public interface I1
 {
     void F1();
@@ -81,14 +81,14 @@ class B1 : I1, I2
 {
     public void F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C1 : I1, I2
     {
         public void F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
@@ -115,7 +115,7 @@ class B3 : I1, I2
     </Project>
 </Workspace>";
 
-            await TestAsync(input, expected, compareTokens: false, fixAllActionEquivalenceKey: fixAllActionEquivalenceKey);
+            await TestInRegularAndScriptAsync(input, expected);
         }
 
         [Fact]
@@ -123,8 +123,6 @@ class B3 : I1, I2
         [Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)]
         public async Task TestFixAllInProject()
         {
-            var fixAllActionEquivalenceKey = ImplementInterfaceCodeAction.GetCodeActionEquivalenceKey("Assembly1", "global::I1", explicitly: false, abstractly: false, throughMember: null, codeActionTypeName: typeof(ImplementInterfaceCodeAction).FullName);
-
             var input = @"
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
@@ -172,8 +170,6 @@ class B3 : I1, I2
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
         <Document>
-using System;
-
 public interface I1
 {
     void F1();
@@ -188,33 +184,31 @@ class B1 : I1, I2
 {
     public void F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C1 : I1, I2
     {
         public void F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
         </Document>
         <Document>
-using System;
-
 class B2 : I1, I2
 {
     public void F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C2 : I1, I2
     {
         public void F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
@@ -233,7 +227,7 @@ class B3 : I1, I2
     </Project>
 </Workspace>";
 
-            await TestAsync(input, expected, compareTokens: false, fixAllActionEquivalenceKey: fixAllActionEquivalenceKey);
+            await TestInRegularAndScriptAsync(input, expected);
         }
 
         [Fact]
@@ -241,8 +235,6 @@ class B3 : I1, I2
         [Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)]
         public async Task TestFixAllInSolution()
         {
-            var fixAllActionEquivalenceKey = ImplementInterfaceCodeAction.GetCodeActionEquivalenceKey("Assembly1", "global::I2", explicitly: true, abstractly: false, throughMember: null, codeActionTypeName: typeof(ImplementInterfaceCodeAction).FullName);
-
             var input = @"
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
@@ -290,8 +282,6 @@ class B3 : I1, I2
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
         <Document>
-using System;
-
 public interface I1
 {
     void F1();
@@ -306,33 +296,31 @@ class B1 : I1, I2
 {
     void I2.F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C1 : I1, I2
     {
         void I2.F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
         </Document>
         <Document>
-using System;
-
 class B2 : I1, I2
 {
     void I2.F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C2 : I1, I2
     {
         void I2.F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
@@ -341,20 +329,18 @@ class B2 : I1, I2
     <Project Language=""C#"" AssemblyName=""Assembly2"" CommonReferences=""true"">
         <ProjectReference>Assembly1</ProjectReference>
         <Document>
-using System;
-
 class B3 : I1, I2
 {
     void I2.F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C3 : I1, I2
     {
         void I2.F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
@@ -362,7 +348,7 @@ class B3 : I1, I2
     </Project>
 </Workspace>";
 
-            await TestAsync(input, expected, compareTokens: false, fixAllActionEquivalenceKey: fixAllActionEquivalenceKey);
+            await TestInRegularAndScriptAsync(input, expected, index: 1);
         }
 
         [Fact]
@@ -370,8 +356,6 @@ class B3 : I1, I2
         [Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)]
         public async Task TestFixAllInSolution_DifferentAssemblyWithSameTypeName()
         {
-            var fixAllActionEquivalenceKey = ImplementInterfaceCodeAction.GetCodeActionEquivalenceKey("Assembly1", "global::I2", explicitly: true, abstractly: false, throughMember: null, codeActionTypeName: typeof(ImplementInterfaceCodeAction).FullName);
-
             var input = @"
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
@@ -428,8 +412,6 @@ class B3 : I1, I2
 <Workspace>
     <Project Language=""C#"" AssemblyName=""Assembly1"" CommonReferences=""true"">
         <Document>
-using System;
-
 public interface I1
 {
     void F1();
@@ -444,33 +426,31 @@ class B1 : I1, I2
 {
     void I2.F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C1 : I1, I2
     {
         void I2.F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
         </Document>
         <Document>
-using System;
-
 class B2 : I1, I2
 {
     void I2.F1()
     {
-        throw new NotImplementedException();
+        throw new System.NotImplementedException();
     }
 
     class C2 : I1, I2
     {
         void I2.F1()
         {
-            throw new NotImplementedException();
+            throw new System.NotImplementedException();
         }
     }
 }
@@ -498,7 +478,7 @@ class B3 : I1, I2
     </Project>
 </Workspace>";
 
-            await TestAsync(input, expected, compareTokens: false, fixAllActionEquivalenceKey: fixAllActionEquivalenceKey);
+            await TestInRegularAndScriptAsync(input, expected, index: 1);
         }
 
         #endregion

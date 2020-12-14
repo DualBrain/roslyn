@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -6,7 +8,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.GeneratedCodeRecognition;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
@@ -18,9 +19,7 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
         protected abstract IList<bool> GetAvailableInsertionIndices(SyntaxNode destination, CancellationToken cancellationToken);
 
         private IList<bool> GetAvailableInsertionIndices<TDeclarationNode>(TDeclarationNode destination, CancellationToken cancellationToken) where TDeclarationNode : SyntaxNode
-        {
-            return GetAvailableInsertionIndices((SyntaxNode)destination, cancellationToken);
-        }
+            => GetAvailableInsertionIndices((SyntaxNode)destination, cancellationToken);
 
         public bool CanAddTo(ISymbol destination, Solution solution, CancellationToken cancellationToken)
         {
@@ -53,12 +52,10 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
         }
 
         public bool CanAddTo(SyntaxNode destination, Solution solution, CancellationToken cancellationToken)
-        {
-            return CanAddTo(destination, solution, cancellationToken, out var availableIndices);
-        }
+            => CanAddTo(destination, solution, cancellationToken, out _);
 
-        private bool CanAddTo(SyntaxNode destination, Solution solution, CancellationToken cancellationToken,
-            out IList<bool> availableIndices, bool checkGeneratedCode = false)
+        private bool CanAddTo(SyntaxNode? destination, Solution solution, CancellationToken cancellationToken,
+            out IList<bool>? availableIndices, bool checkGeneratedCode = false)
         {
             availableIndices = null;
             if (destination == null)
@@ -75,7 +72,7 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
             }
 
             // check for generated files if needed.
-            if (checkGeneratedCode && document.IsGeneratedCode())
+            if (checkGeneratedCode && document.IsGeneratedCode(cancellationToken))
             {
                 return false;
             }
@@ -110,21 +107,38 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
             return availableIndices != null && availableIndices.Any(b => b);
         }
 
-        private async Task<Tuple<SyntaxNode, IList<bool>>> FindMostRelevantDeclarationAsync(
+        /// <summary>
+        /// Return the most relevant declaration to namespaceOrType,
+        /// it will first search the context node contained within,
+        /// then the declaration in the same file, then non auto-generated file,
+        /// then all the potential location. Return null if no declaration.
+        /// </summary>
+        public async Task<SyntaxNode?> FindMostRelevantNameSpaceOrTypeDeclarationAsync(
             Solution solution,
             INamespaceOrTypeSymbol namespaceOrType,
             CodeGenerationOptions options,
             CancellationToken cancellationToken)
         {
-            SyntaxNode declaration = default(SyntaxNode);
-            IList<bool> availableIndices = null;
+            var option = options ?? CodeGenerationOptions.Default;
+            var (declaration, _) = await FindMostRelevantDeclarationAsync(solution, namespaceOrType, option, cancellationToken).ConfigureAwait(false);
+            return declaration;
+        }
+
+        private async Task<(SyntaxNode? declaration, IList<bool>? availableIndices)> FindMostRelevantDeclarationAsync(
+            Solution solution,
+            INamespaceOrTypeSymbol namespaceOrType,
+            CodeGenerationOptions options,
+            CancellationToken cancellationToken)
+        {
+            var declaration = (SyntaxNode?)null;
+            IList<bool>? availableIndices = null;
 
             var symbol = namespaceOrType;
             var locationOpt = options.BestLocation;
 
             var declarations = _symbolDeclarationService.GetDeclarations(symbol);
 
-            var fallbackDeclaration = default(SyntaxNode);
+            var fallbackDeclaration = (SyntaxNode?)null;
             if (locationOpt != null && locationOpt.IsInSource)
             {
                 var token = locationOpt.FindToken(cancellationToken);
@@ -155,19 +169,19 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
                 // container isn't really used by the user to place code, but is instead just
                 // used to separate out the nested type.  It would be nice to detect this and do the
                 // right thing.
-                declaration = await SelectFirstOrDefaultAsync(declarations, token.Parent.AncestorsAndSelf().Contains, cancellationToken).ConfigureAwait(false);
+                declaration = await SelectFirstOrDefaultAsync(declarations, token.GetRequiredParent().AncestorsAndSelf().Contains, cancellationToken).ConfigureAwait(false);
                 fallbackDeclaration = declaration;
                 if (CanAddTo(declaration, solution, cancellationToken, out availableIndices))
                 {
-                    return Tuple.Create(declaration, availableIndices);
+                    return (declaration, availableIndices);
                 }
 
                 // Then, prefer a declaration from the same file.
                 declaration = await SelectFirstOrDefaultAsync(declarations.Where(r => r.SyntaxTree == locationOpt.SourceTree), node => true, cancellationToken).ConfigureAwait(false);
-                fallbackDeclaration = fallbackDeclaration ?? declaration;
+                fallbackDeclaration ??= declaration;
                 if (CanAddTo(declaration, solution, cancellationToken, out availableIndices))
                 {
-                    return Tuple.Create(declaration, availableIndices);
+                    return (declaration, availableIndices);
                 }
             }
 
@@ -177,7 +191,7 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
                 declaration = await decl.GetSyntaxAsync(cancellationToken).ConfigureAwait(false);
                 if (CanAddTo(declaration, solution, cancellationToken, out availableIndices, checkGeneratedCode: true))
                 {
-                    return Tuple.Create(declaration, availableIndices);
+                    return (declaration, availableIndices);
                 }
             }
 
@@ -185,10 +199,10 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
             availableIndices = null;
             declaration = fallbackDeclaration ?? await SelectFirstOrDefaultAsync(declarations, node => true, cancellationToken).ConfigureAwait(false);
 
-            return Tuple.Create(declaration, availableIndices);
+            return (declaration, availableIndices);
         }
 
-        private static async Task<SyntaxNode> SelectFirstOrDefaultAsync(IEnumerable<SyntaxReference> references, Func<SyntaxNode, bool> predicate, CancellationToken cancellationToken)
+        private static async Task<SyntaxNode?> SelectFirstOrDefaultAsync(IEnumerable<SyntaxReference> references, Func<SyntaxNode, bool> predicate, CancellationToken cancellationToken)
         {
             foreach (var r in references)
             {

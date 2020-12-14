@@ -1,18 +1,21 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+#nullable disable
+
+using System;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.CSharp.KeywordHighlighting;
-using Roslyn.Test.Utilities;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Xunit;
 
 namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 {
     public class IfStatementHighlighterTests : AbstractCSharpKeywordHighlighterTests
     {
-        internal override IHighlighter CreateHighlighter()
-        {
-            return new IfStatementHighlighter();
-        }
+        internal override Type GetHighlighterType()
+            => typeof(IfStatementHighlighter);
 
         [Fact, Trait(Traits.Feature, Traits.Features.KeywordHighlighting)]
         public async Task TestIfStatementWithIfAndSingleElse1()
@@ -20,7 +23,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         {|Cursor:[|if|]|} (a < 5)
@@ -41,7 +44,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -62,7 +65,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         {|Cursor:[|if|]|} (a < 5)
@@ -87,7 +90,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -112,7 +115,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -131,35 +134,13 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.KeywordHighlighting
 }");
         }
 
-        private const string Code3 = @"
-public class C
-{
-    public void Foo()
-    {
-        int a = 10;
-        if (a < 5)
-        {
-            // blah
-        }
-        else 
-        if (a == 10)
-        {
-            // blah
-        }
-        else
-        {
-            // blah
-        }
-    }
-}";
-
         [Fact, Trait(Traits.Feature, Traits.Features.KeywordHighlighting)]
         public async Task TestIfStatementWithElseIfOnDifferentLines1()
         {
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         {|Cursor:[|if|]|} (a < 5)
@@ -185,7 +166,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -211,7 +192,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -237,7 +218,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -257,31 +238,13 @@ public class C
 }");
         }
 
-        private const string Code4 = @"
-public class C
-{
-    public void Foo()
-    {
-        int a = 10;
-        if(a < 5) {
-            // blah
-        }
-        else if(a == 10) {
-            // blah
-        }
-        else{
-            // blah
-        }
-    }
-}";
-
         [Fact, Trait(Traits.Feature, Traits.Features.KeywordHighlighting)]
         public async Task TestIfStatementWithIfAndElseIfAndElseTouching1()
         {
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         {|Cursor:[|if|]|}(a < 5)
@@ -305,7 +268,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|](a < 5)
@@ -329,7 +292,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|](a < 5)
@@ -353,7 +316,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         {|Cursor:[|if|]|} (a < 5)
@@ -378,7 +341,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -403,7 +366,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -422,34 +385,13 @@ public class C
 }");
         }
 
-        private const string Code6 = @"
-public class C
-{
-    public void Foo()
-    {
-        int a = 10;
-        if (a < 5)
-        {
-            // blah
-        }
-        else /* test */ if (a == 10)
-        {
-            // blah
-        }
-        else
-        {
-            // blah
-        }
-    }
-}";
-
         [Fact, Trait(Traits.Feature, Traits.Features.KeywordHighlighting)]
         public async Task TestCommentBetweenElseIf1()
         {
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         {|Cursor:[|if|]|} (a < 5)
@@ -474,7 +416,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -499,7 +441,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -524,7 +466,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         [|if|] (a < 5)
@@ -543,36 +485,13 @@ public class C
 }");
         }
 
-        private const string Code7 = @"
-public class C
-{
-    public void Foo()
-    {
-        int a = 10;
-        int b = 15;
-        if (a < 5) {
-            // blah
-            if (b < 15)
-                b = 15;
-            else
-                b = 14;
-        }
-        else if (a == 10) {
-            // blah
-        }
-        else {
-            // blah
-        }
-    }
-}";
-
         [Fact, Trait(Traits.Feature, Traits.Features.KeywordHighlighting)]
         public async Task TestNestedIfDoesNotHighlight1()
         {
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         int b = 15;
@@ -602,7 +521,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         int b = 15;
@@ -632,7 +551,7 @@ public class C
             await TestAsync(
 @"public class C
 {
-    public void Foo()
+    public void Goo()
     {
         int a = 10;
         int b = 15;

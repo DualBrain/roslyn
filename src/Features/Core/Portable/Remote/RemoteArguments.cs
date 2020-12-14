@@ -1,71 +1,88 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+#nullable disable
+
+using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
+using System.Runtime.Serialization;
 using Microsoft.CodeAnalysis.NavigateTo;
 using Microsoft.CodeAnalysis.Navigation;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.Remote
 {
-    internal class SerializableTaggedText
-    {
-        public string Tag;
-        public string Text;
-
-        public static SerializableTaggedText Dehydrate(TaggedText taggedText)
-        {
-            return new SerializableTaggedText { Tag = taggedText.Tag, Text = taggedText.Text };
-        }
-
-        internal static SerializableTaggedText[] Dehydrate(ImmutableArray<TaggedText> displayTaggedParts)
-        {
-            return displayTaggedParts.Select(Dehydrate).ToArray();
-        }
-
-        public TaggedText Rehydrate()
-        {
-            return new TaggedText(Tag, Text);
-        }
-    }
-
     #region NavigateTo
 
-    internal class SerializableNavigateToSearchResult
+    [DataContract]
+    internal readonly struct SerializableNavigateToSearchResult
     {
-        public string AdditionalInformation;
+        [DataMember(Order = 0)]
+        public readonly string AdditionalInformation;
 
-        public string Kind;
-        public NavigateToMatchKind MatchKind;
-        public bool IsCaseSensitive;
-        public string Name;
-        public SerializableTextSpan[] NameMatchSpans;
-        public string SecondarySort;
-        public string Summary;
+        [DataMember(Order = 1)]
+        public readonly string Kind;
 
-        public SerializableNavigableItem NavigableItem;
+        [DataMember(Order = 2)]
+        public readonly NavigateToMatchKind MatchKind;
+
+        [DataMember(Order = 3)]
+        public readonly bool IsCaseSensitive;
+
+        [DataMember(Order = 4)]
+        public readonly string Name;
+
+        [DataMember(Order = 5)]
+        public readonly ImmutableArray<TextSpan> NameMatchSpans;
+
+        [DataMember(Order = 6)]
+        public readonly string SecondarySort;
+
+        [DataMember(Order = 7)]
+        public readonly string Summary;
+
+        [DataMember(Order = 8)]
+        public readonly SerializableNavigableItem NavigableItem;
+
+        public SerializableNavigateToSearchResult(
+            string additionalInformation,
+            string kind,
+            NavigateToMatchKind matchKind,
+            bool isCaseSensitive,
+            string name,
+            ImmutableArray<TextSpan> nameMatchSpans,
+            string secondarySort,
+            string summary,
+            SerializableNavigableItem navigableItem)
+        {
+            AdditionalInformation = additionalInformation;
+            Kind = kind;
+            MatchKind = matchKind;
+            IsCaseSensitive = isCaseSensitive;
+            Name = name;
+            NameMatchSpans = nameMatchSpans;
+            SecondarySort = secondarySort;
+            Summary = summary;
+            NavigableItem = navigableItem;
+        }
 
         internal static SerializableNavigateToSearchResult Dehydrate(INavigateToSearchResult result)
-        {
-            return new SerializableNavigateToSearchResult
-            {
-                AdditionalInformation = result.AdditionalInformation,
-                Kind = result.Kind,
-                MatchKind = result.MatchKind,
-                IsCaseSensitive = result.IsCaseSensitive,
-                Name = result.Name,
-                NameMatchSpans = result.NameMatchSpans.Select(SerializableTextSpan.Dehydrate).ToArray(),
-                SecondarySort = result.SecondarySort,
-                Summary = result.Summary,
-                NavigableItem = SerializableNavigableItem.Dehydrate(result.NavigableItem)
-            };
-        }
+            => new(result.AdditionalInformation,
+                   result.Kind,
+                   result.MatchKind,
+                   result.IsCaseSensitive,
+                   result.Name,
+                   result.NameMatchSpans,
+                   result.SecondarySort,
+                   result.Summary,
+                   SerializableNavigableItem.Dehydrate(result.NavigableItem));
 
         internal INavigateToSearchResult Rehydrate(Solution solution)
         {
             return new NavigateToSearchResult(
                 AdditionalInformation, Kind, MatchKind, IsCaseSensitive,
-                Name, NameMatchSpans.Select(s => s.Rehydrate()).ToImmutableArray(),
+                Name, NameMatchSpans,
                 SecondarySort, Summary, NavigableItem.Rehydrate(solution));
         }
 
@@ -83,7 +100,7 @@ namespace Microsoft.CodeAnalysis.Remote
             public INavigableItem NavigableItem { get; }
 
             public NavigateToSearchResult(
-                string additionalInformation, string kind, NavigateToMatchKind matchKind, 
+                string additionalInformation, string kind, NavigateToMatchKind matchKind,
                 bool isCaseSensitive, string name, ImmutableArray<TextSpan> nameMatchSpans,
                 string secondarySort, string summary, INavigableItem navigableItem)
             {
@@ -100,50 +117,71 @@ namespace Microsoft.CodeAnalysis.Remote
         }
     }
 
-    internal class SerializableNavigableItem
+    /// <summary>
+    /// Note: this is intentionally a class, not struct, to avoid hitting .NET Framework loader bug
+    /// that fails to load a struct S declaring a field of type ImmutableArray of S.
+    /// </summary>
+    [DataContract]
+    internal sealed class SerializableNavigableItem
     {
-        public Glyph Glyph;
+        [DataMember(Order = 0)]
+        public readonly Glyph Glyph;
 
-        public SerializableTaggedText[] DisplayTaggedParts;
+        [DataMember(Order = 1)]
+        public readonly ImmutableArray<TaggedText> DisplayTaggedParts;
 
-        public bool DisplayFileLocation;
+        [DataMember(Order = 2)]
+        public readonly bool DisplayFileLocation;
 
-        public bool IsImplicitlyDeclared;
+        [DataMember(Order = 3)]
+        public readonly bool IsImplicitlyDeclared;
 
-        public SerializableDocumentId Document;
-        public SerializableTextSpan SourceSpan;
+        [DataMember(Order = 4)]
+        public readonly DocumentId Document;
 
-        SerializableNavigableItem[] ChildItems;
+        [DataMember(Order = 5)]
+        public readonly TextSpan SourceSpan;
+
+        [DataMember(Order = 6)]
+        public readonly ImmutableArray<SerializableNavigableItem> ChildItems;
+
+        public SerializableNavigableItem(
+            Glyph glyph,
+            ImmutableArray<TaggedText> displayTaggedParts,
+            bool displayFileLocation,
+            bool isImplicitlyDeclared,
+            DocumentId document,
+            TextSpan sourceSpan,
+            ImmutableArray<SerializableNavigableItem> childItems)
+        {
+            Glyph = glyph;
+            DisplayTaggedParts = displayTaggedParts;
+            DisplayFileLocation = displayFileLocation;
+            IsImplicitlyDeclared = isImplicitlyDeclared;
+            Document = document;
+            SourceSpan = sourceSpan;
+            ChildItems = childItems;
+        }
 
         public static SerializableNavigableItem Dehydrate(INavigableItem item)
-        {
-            return new SerializableNavigableItem
-            {
-                Glyph = item.Glyph,
-                DisplayTaggedParts = SerializableTaggedText.Dehydrate(item.DisplayTaggedParts),
-                DisplayFileLocation = item.DisplayFileLocation,
-                IsImplicitlyDeclared = item.IsImplicitlyDeclared,
-                Document = SerializableDocumentId.Dehydrate(item.Document),
-                SourceSpan = SerializableTextSpan.Dehydrate(item.SourceSpan),
-                ChildItems = SerializableNavigableItem.Dehydrate(item.ChildItems)
-            };
-        }
-
-        private static SerializableNavigableItem[] Dehydrate(ImmutableArray<INavigableItem> childItems)
-        {
-            return childItems.Select(Dehydrate).ToArray();
-        }
+            => new(item.Glyph,
+                   item.DisplayTaggedParts,
+                   item.DisplayFileLocation,
+                   item.IsImplicitlyDeclared,
+                   item.Document.Id,
+                   item.SourceSpan,
+                   item.ChildItems.SelectAsArray(Dehydrate));
 
         public INavigableItem Rehydrate(Solution solution)
         {
             var childItems = ChildItems == null
                 ? ImmutableArray<INavigableItem>.Empty
-                : ChildItems.Select(c => c.Rehydrate(solution)).ToImmutableArray();
+                : ChildItems.SelectAsArray(c => c.Rehydrate(solution));
             return new NavigableItem(
-                Glyph, DisplayTaggedParts.Select(p => p.Rehydrate()).ToImmutableArray(),
+                Glyph, DisplayTaggedParts,
                 DisplayFileLocation, IsImplicitlyDeclared,
-                solution.GetDocument(Document.Rehydrate()),
-                SourceSpan.Rehydrate(),
+                solution.GetDocument(Document),
+                SourceSpan,
                 childItems);
         }
 

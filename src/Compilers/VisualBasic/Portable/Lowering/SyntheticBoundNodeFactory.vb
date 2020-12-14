@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System
 Imports System.Collections.Generic
@@ -8,6 +10,7 @@ Imports System.Linq
 Imports System.Text
 Imports Microsoft.Cci
 Imports Microsoft.CodeAnalysis.CodeGen
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.RuntimeMembers
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Emit
@@ -77,7 +80,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         Public Sub AddNestedType(nestedType As NamedTypeSymbol)
             Dim [module] As PEModuleBuilder = Me.EmitModule
             If [module] IsNot Nothing Then
-                [module].AddSynthesizedDefinition(_currentClass, nestedType)
+                [module].AddSynthesizedDefinition(_currentClass, nestedType.GetCciAdapter())
             End If
         End Sub
 
@@ -90,21 +93,21 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         Public Sub AddField(containingType As NamedTypeSymbol, field As FieldSymbol)
             Dim [module] As PEModuleBuilder = Me.EmitModule
             If [module] IsNot Nothing Then
-                [module].AddSynthesizedDefinition(containingType, field)
+                [module].AddSynthesizedDefinition(containingType, field.GetCciAdapter())
             End If
         End Sub
 
         Public Sub AddMethod(containingType As NamedTypeSymbol, method As MethodSymbol)
             Dim [module] As PEModuleBuilder = Me.EmitModule
             If [module] IsNot Nothing Then
-                [module].AddSynthesizedDefinition(containingType, method)
+                [module].AddSynthesizedDefinition(containingType, method.GetCciAdapter())
             End If
         End Sub
 
         Public Sub AddProperty(containingType As NamedTypeSymbol, prop As PropertySymbol)
             Dim [module] As PEModuleBuilder = Me.EmitModule
             If [module] IsNot Nothing Then
-                [module].AddSynthesizedDefinition(containingType, prop)
+                [module].AddSynthesizedDefinition(containingType, prop.GetCciAdapter())
             End If
         End Sub
 
@@ -327,7 +330,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         End Function
 
         Public Function ReferenceAssignment(byRefLocal As LocalSymbol, lValue As BoundExpression) As BoundReferenceAssignment
-            Debug.Assert(byRefLocal.Type = lValue.Type)
+            Debug.Assert(TypeSymbol.Equals(byRefLocal.Type, lValue.Type, TypeCompareKind.ConsiderEverything))
             Debug.Assert(byRefLocal.IsByRef)
 
             Dim boundNode = New BoundReferenceAssignment(_syntax, Local(byRefLocal, isLValue:=True), lValue, isLValue:=True, type:=lValue.Type)
@@ -474,8 +477,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return boundNode
         End Function
 
-        Public Function BadExpression(ParamArray subExpressions As BoundNode()) As BoundExpression
-            Dim boundNode = New BoundBadExpression(_syntax, LookupResultKind.Empty, ImmutableArray(Of Symbol).Empty, ImmutableArray.Create(Of BoundNode)(subExpressions), ErrorTypeSymbol.UnknownResultType, hasErrors:=True)
+        Public Function BadExpression(ParamArray subExpressions As BoundExpression()) As BoundExpression
+            Dim boundNode = New BoundBadExpression(_syntax, LookupResultKind.Empty, ImmutableArray(Of Symbol).Empty, ImmutableArray.Create(subExpressions), ErrorTypeSymbol.UnknownResultType, hasErrors:=True)
             boundNode.SetWasCompilerGenerated()
             Return boundNode
         End Function

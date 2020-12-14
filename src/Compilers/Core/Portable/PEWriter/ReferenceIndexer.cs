@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -23,12 +27,12 @@ namespace Microsoft.Cci
         {
             // Visit these assembly-level attributes even when producing a module.
             // They'll be attached off the "AssemblyAttributesGoHere" typeRef if a module is being produced.
-            Visit(module.GetSourceAssemblyAttributes());
+            Visit(module.GetSourceAssemblyAttributes(Context.IsRefAssembly));
             Visit(module.GetSourceAssemblySecurityAttributes());
 
             Visit(module.GetAssemblyReferences(Context));
             Visit(module.GetSourceModuleAttributes());
-            Visit(module.GetTopLevelTypes(Context));
+            Visit(module.GetTopLevelTypeDefinitions(Context));
 
             foreach (var exportedType in module.GetExportedTypes(Context.Diagnostics))
             {
@@ -99,7 +103,7 @@ namespace Microsoft.Cci
 
         protected override void ProcessMethodBody(IMethodDefinition method)
         {
-            if (method.HasBody())
+            if (method.HasBody() && !metadataWriter.MetadataOnly)
             {
                 var body = method.GetBody(Context);
 
@@ -119,7 +123,7 @@ namespace Microsoft.Cci
                         }
                     }
                 }
-                else if (!metadataWriter.allowMissingMethodBodies)
+                else if (!metadataWriter.MetadataOnly)
                 {
                     throw ExceptionUtilities.Unreachable;
                 }

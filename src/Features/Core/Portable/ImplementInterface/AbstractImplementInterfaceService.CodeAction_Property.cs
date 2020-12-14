@@ -1,14 +1,16 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System;
-using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
-using System.Threading;
 using Microsoft.CodeAnalysis.CodeGeneration;
 using Microsoft.CodeAnalysis.Editing;
+using Microsoft.CodeAnalysis.ImplementType;
 using Microsoft.CodeAnalysis.LanguageServices;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Shared.Utilities;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.ImplementInterface
 {
@@ -24,31 +26,34 @@ namespace Microsoft.CodeAnalysis.ImplementInterface
                 bool generateAbstractly,
                 bool useExplicitInterfaceSymbol,
                 string memberName,
-                CancellationToken cancellationToken)
+                ImplementTypePropertyGenerationBehavior propertyGenerationBehavior)
             {
-                var factory = this.Document.GetLanguageService<SyntaxGenerator>();
+                var factory = Document.GetLanguageService<SyntaxGenerator>();
                 var attributesToRemove = AttributesToRemove(compilation);
 
-                var getAccessor = GenerateGetAccessor(compilation, property, accessibility, generateAbstractly,
-                    useExplicitInterfaceSymbol, attributesToRemove, cancellationToken);
+                var getAccessor = GenerateGetAccessor(
+                    compilation, property, accessibility, generateAbstractly, useExplicitInterfaceSymbol,
+                    propertyGenerationBehavior, attributesToRemove);
 
-                var setAccessor = GenerateSetAccessor(compilation, property, accessibility,
-                    generateAbstractly, useExplicitInterfaceSymbol, attributesToRemove, cancellationToken);
+                var setAccessor = GenerateSetAccessor(
+                    compilation, property, accessibility, generateAbstractly, useExplicitInterfaceSymbol,
+                    propertyGenerationBehavior, attributesToRemove);
 
-                var syntaxFacts = Document.GetLanguageService<ISyntaxFactsService>();
+                var syntaxFacts = Document.Project.LanguageServices.GetRequiredService<ISyntaxFactsService>();
+
                 var parameterNames = NameGenerator.EnsureUniqueness(
-                    property.Parameters.Select(p => p.Name).ToList(), isCaseSensitive: syntaxFacts.IsCaseSensitive);
+                    property.Parameters.SelectAsArray(p => p.Name),
+                    isCaseSensitive: syntaxFacts.IsCaseSensitive);
 
                 var updatedProperty = property.RenameParameters(parameterNames);
 
-                updatedProperty = updatedProperty.RemoveAttributeFromParameters(attributesToRemove);
+                updatedProperty = updatedProperty.RemoveInaccessibleAttributesAndAttributesOfTypes(compilation.Assembly, attributesToRemove);
 
-                // TODO(cyrusn): Delegate through throughMember if it's non-null.
                 return CodeGenerationSymbolFactory.CreatePropertySymbol(
                     updatedProperty,
                     accessibility: accessibility,
                     modifiers: modifiers,
-                    explicitInterfaceSymbol: useExplicitInterfaceSymbol ? property : null,
+                    explicitInterfaceImplementations: useExplicitInterfaceSymbol ? ImmutableArray.Create(property) : default,
                     name: memberName,
                     getMethod: getAccessor,
                     setMethod: setAccessor);
@@ -60,46 +65,53 @@ namespace Microsoft.CodeAnalysis.ImplementInterface
             /// We never want to place it in source code.
             /// Same thing for the Dynamic attribute.
             /// </summary>
-            private INamedTypeSymbol[] AttributesToRemove(Compilation compilation)
+            private static INamedTypeSymbol[] AttributesToRemove(Compilation compilation)
             {
                 return new[] { compilation.ComAliasNameAttributeType(), compilation.TupleElementNamesAttributeType(),
-                    compilation.DynamicAttributeType() };
+                    compilation.DynamicAttributeType(), compilation.NativeIntegerAttributeType() }.WhereNotNull().ToArray()!;
             }
 
-            private IMethodSymbol GenerateSetAccessor(
+            private IMethodSymbol? GenerateSetAccessor(
                 Compilation compilation,
                 IPropertySymbol property,
                 Accessibility accessibility,
                 bool generateAbstractly,
                 bool useExplicitInterfaceSymbol,
-                INamedTypeSymbol[] attributesToRemove,
-                CancellationToken cancellationToken)
+                ImplementTypePropertyGenerationBehavior propertyGenerationBehavior,
+                INamedTypeSymbol[] attributesToRemove)
             {
                 if (property.SetMethod == null)
                 {
                     return null;
                 }
 
+                if (property.GetMethod == null)
+                {
+                    // Can't have an auto-prop with just a setter.
+                    propertyGenerationBehavior = ImplementTypePropertyGenerationBehavior.PreferThrowingProperties;
+                }
+
                 var setMethod = property.SetMethod.RemoveInaccessibleAttributesAndAttributesOfTypes(
-                     this.State.ClassOrStructType,
+                     State.ClassOrStructType,
                      attributesToRemove);
 
                 return CodeGenerationSymbolFactory.CreateAccessorSymbol(
                     setMethod,
-                    attributes: null,
+                    attributes: default,
                     accessibility: accessibility,
-                    explicitInterfaceSymbol: useExplicitInterfaceSymbol ? property.SetMethod : null,
-                    statements: GetSetAccessorStatements(compilation, property, generateAbstractly, cancellationToken));
+                    explicitInterfaceImplementations: useExplicitInterfaceSymbol ? ImmutableArray.Create(property.SetMethod) : default,
+                    statements: GetSetAccessorStatements(
+                        compilation, property, generateAbstractly, propertyGenerationBehavior));
             }
 
-            private IMethodSymbol GenerateGetAccessor(
+            private IMethodSymbol? GenerateGetAccessor(
                 Compilation compilation,
                 IPropertySymbol property,
                 Accessibility accessibility,
                 bool generateAbstractly,
                 bool useExplicitInterfaceSymbol,
-                INamedTypeSymbol[] attributesToRemove,
-                CancellationToken cancellationToken)
+                ImplementTypePropertyGenerationBehavior propertyGenerationBehavior,
+                INamedTypeSymbol[] attributesToRemove)
             {
                 if (property.GetMethod == null)
                 {
@@ -107,95 +119,44 @@ namespace Microsoft.CodeAnalysis.ImplementInterface
                 }
 
                 var getMethod = property.GetMethod.RemoveInaccessibleAttributesAndAttributesOfTypes(
-                     this.State.ClassOrStructType,
+                     State.ClassOrStructType,
                      attributesToRemove);
 
                 return CodeGenerationSymbolFactory.CreateAccessorSymbol(
                     getMethod,
-                    attributes: null,
+                    attributes: default,
                     accessibility: accessibility,
-                    explicitInterfaceSymbol: useExplicitInterfaceSymbol ? property.GetMethod : null,
-                    statements: GetGetAccessorStatements(compilation, property, generateAbstractly, cancellationToken));
+                    explicitInterfaceImplementations: useExplicitInterfaceSymbol ? ImmutableArray.Create(property.GetMethod) : default,
+                    statements: GetGetAccessorStatements(
+                        compilation, property, generateAbstractly, propertyGenerationBehavior));
             }
 
-            private IList<SyntaxNode> GetSetAccessorStatements(
+            private ImmutableArray<SyntaxNode> GetSetAccessorStatements(
                 Compilation compilation,
                 IPropertySymbol property,
                 bool generateAbstractly,
-                CancellationToken cancellationToken)
+                ImplementTypePropertyGenerationBehavior propertyGenerationBehavior)
             {
                 if (generateAbstractly)
-                {
-                    return null;
-                }
+                    return default;
 
-                var factory = this.Document.GetLanguageService<SyntaxGenerator>();
-                if (ThroughMember != null)
-                {
-                    var throughExpression = CreateThroughExpression(factory);
-                    SyntaxNode expression;
-
-                    if (property.IsIndexer)
-                    {
-                        expression = throughExpression;
-                    }
-                    else
-                    {
-                        expression = factory.MemberAccessExpression(
-                                                throughExpression, factory.IdentifierName(property.Name));
-                    }
-
-                    if (property.Parameters.Length > 0)
-                    {
-                        var arguments = factory.CreateArguments(property.Parameters.As<IParameterSymbol>());
-                        expression = factory.ElementAccessExpression(expression, arguments);
-                    }
-
-                    expression = factory.AssignmentStatement(expression, factory.IdentifierName("value"));
-
-                    return new[] { factory.ExpressionStatement(expression) };
-                }
-
-                return factory.CreateThrowNotImplementedStatementBlock(compilation);
+                var generator = Document.GetRequiredLanguageService<SyntaxGenerator>();
+                return generator.GetSetAccessorStatements(compilation, property, ThroughMember,
+                    propertyGenerationBehavior == ImplementTypePropertyGenerationBehavior.PreferAutoProperties);
             }
 
-            private IList<SyntaxNode> GetGetAccessorStatements(
+            private ImmutableArray<SyntaxNode> GetGetAccessorStatements(
                 Compilation compilation,
                 IPropertySymbol property,
                 bool generateAbstractly,
-                CancellationToken cancellationToken)
+                ImplementTypePropertyGenerationBehavior propertyGenerationBehavior)
             {
                 if (generateAbstractly)
-                {
-                    return null;
-                }
+                    return default;
 
-                var factory = this.Document.GetLanguageService<SyntaxGenerator>();
-                if (ThroughMember != null)
-                {
-                    var throughExpression = CreateThroughExpression(factory);
-                    SyntaxNode expression;
-
-                    if (property.IsIndexer)
-                    {
-                        expression = throughExpression;
-                    }
-                    else
-                    {
-                        expression = factory.MemberAccessExpression(
-                                                throughExpression, factory.IdentifierName(property.Name));
-                    }
-
-                    if (property.Parameters.Length > 0)
-                    {
-                        var arguments = factory.CreateArguments(property.Parameters.As<IParameterSymbol>());
-                        expression = factory.ElementAccessExpression(expression, arguments);
-                    }
-
-                    return new[] { factory.ReturnStatement(expression) };
-                }
-
-                return factory.CreateThrowNotImplementedStatementBlock(compilation);
+                var generator = Document.Project.LanguageServices.GetRequiredService<SyntaxGenerator>();
+                return generator.GetGetAccessorStatements(compilation, property, ThroughMember,
+                    propertyGenerationBehavior == ImplementTypePropertyGenerationBehavior.PreferAutoProperties);
             }
         }
     }

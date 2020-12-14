@@ -1,5 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using System.IO;
 using System.Linq;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -11,7 +14,7 @@ namespace Microsoft.CodeAnalysis.BuildTasks
     /// This class defines all of the common stuff that is shared between the Vbc and Csc tasks.
     /// This class is not instantiatable as a Task just by itself.
     /// </summary>
-    public abstract class InteractiveCompiler : ToolTask
+    public abstract class InteractiveCompiler : ManagedToolTask
     {
         internal readonly PropertyDictionary _store = new PropertyDictionary();
 
@@ -21,7 +24,7 @@ namespace Microsoft.CodeAnalysis.BuildTasks
         }
 
         #region Properties - Please keep these alphabetized.
-        public string[] AdditionalLibPaths
+        public string[]? AdditionalLibPaths
         {
             set
             {
@@ -30,11 +33,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (string[])_store[nameof(AdditionalLibPaths)];
+                return (string[]?)_store[nameof(AdditionalLibPaths)];
             }
         }
 
-        public string[] AdditionalLoadPaths
+        public string[]? AdditionalLoadPaths
         {
             set
             {
@@ -43,12 +46,12 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (string[])_store[nameof(AdditionalLoadPaths)];
+                return (string[]?)_store[nameof(AdditionalLoadPaths)];
             }
         }
 
         [Output]
-        public ITaskItem[] CommandLineArgs
+        public ITaskItem[]? CommandLineArgs
         {
             set
             {
@@ -57,11 +60,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (ITaskItem[])_store[nameof(CommandLineArgs)];
+                return (ITaskItem[]?)_store[nameof(CommandLineArgs)];
             }
         }
 
-        public string Features
+        public string? Features
         {
             set
             {
@@ -70,11 +73,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (string)_store[nameof(Features)];
+                return (string?)_store[nameof(Features)];
             }
         }
 
-        public ITaskItem[] Imports
+        public ITaskItem[]? Imports
         {
             set
             {
@@ -83,7 +86,7 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (ITaskItem[])_store[nameof(Imports)];
+                return (ITaskItem[]?)_store[nameof(Imports)];
             }
         }
 
@@ -100,7 +103,7 @@ namespace Microsoft.CodeAnalysis.BuildTasks
             }
         }
 
-        public ITaskItem[] References
+        public ITaskItem[]? References
         {
             set
             {
@@ -109,11 +112,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (ITaskItem[])_store[nameof(References)];
+                return (ITaskItem[]?)_store[nameof(References)];
             }
         }
 
-        public ITaskItem[] ResponseFiles
+        public ITaskItem[]? ResponseFiles
         {
             set
             {
@@ -122,11 +125,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (ITaskItem[])_store[nameof(ResponseFiles)];
+                return (ITaskItem[]?)_store[nameof(ResponseFiles)];
             }
         }
 
-        public string[] ScriptArguments
+        public string[]? ScriptArguments
         {
             set
             {
@@ -135,11 +138,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (string[])_store[nameof(ScriptArguments)];
+                return (string[]?)_store[nameof(ScriptArguments)];
             }
         }
 
-        public ITaskItem[] ScriptResponseFiles
+        public ITaskItem[]? ScriptResponseFiles
         {
             set
             {
@@ -148,7 +151,7 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (ITaskItem[])_store[nameof(ScriptResponseFiles)];
+                return (ITaskItem[]?)_store[nameof(ScriptResponseFiles)];
             }
         }
 
@@ -165,7 +168,7 @@ namespace Microsoft.CodeAnalysis.BuildTasks
             }
         }
 
-        public ITaskItem Source
+        public ITaskItem? Source
         {
             set
             {
@@ -174,12 +177,22 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
             get
             {
-                return (ITaskItem)_store[nameof(Source)];
+                return (ITaskItem?)_store[nameof(Source)];
             }
         }
         #endregion
 
         #region Tool Members
+
+        // See ManagedCompiler.cs on the logic of this property
+        private bool HasToolBeenOverridden => !(string.IsNullOrEmpty(ToolPath) && ToolExe == ToolName);
+
+        protected sealed override bool IsManagedTool => !HasToolBeenOverridden;
+
+        protected sealed override string PathToManagedTool => Utilities.GenerateFullPathToTool(ToolName);
+
+        protected sealed override string PathToNativeTool => Path.Combine(ToolPath ?? "", ToolExe);
+
         protected override int ExecuteTool(string pathToTool, string responseFileCommands, string commandLineCommands)
         {
             if (ProvideCommandLineArgs)
@@ -192,36 +205,19 @@ namespace Microsoft.CodeAnalysis.BuildTasks
 
         public string GenerateCommandLineContents() => GenerateCommandLineCommands();
 
-        protected override string GenerateCommandLineCommands()
+        protected sealed override string ToolArguments
         {
-            var commandLineBuilder = new CommandLineBuilderExtension();
-            AddCommandLineCommands(commandLineBuilder);
-            return commandLineBuilder.ToString();
-        }
-
-        /// <summary>
-        /// Return the path to the tool to execute.
-        /// </summary>
-        protected override string GenerateFullPathToTool()
-        {
-            string pathToTool = ToolLocationHelper.GetPathToBuildToolsFile(ToolName, ToolLocationHelper.CurrentToolsVersion);
-
-            if (pathToTool == null)
+            get
             {
-                pathToTool = ToolLocationHelper.GetPathToDotNetFrameworkFile(ToolName, TargetDotNetFrameworkVersion.VersionLatest);
-
-                if (pathToTool == null)
-                {
-                    Log.LogErrorWithCodeFromResources("General_FrameworksFileNotFound", ToolName, ToolLocationHelper.GetDotNetFrameworkVersionFolderPrefix(TargetDotNetFrameworkVersion.VersionLatest));
-                }
+                var builder = new CommandLineBuilderExtension();
+                AddCommandLineCommands(builder);
+                return builder.ToString();
             }
-
-            return pathToTool;
         }
 
         public string GenerateResponseFileContents() => GenerateResponseFileCommands();
 
-        protected override string GenerateResponseFileCommands()
+        protected sealed override string GenerateResponseFileCommands()
         {
             var commandLineBuilder = new CommandLineBuilderExtension();
             AddResponseFileCommands(commandLineBuilder);
@@ -261,11 +257,11 @@ namespace Microsoft.CodeAnalysis.BuildTasks
             {
                 foreach (var scriptArgument in ScriptArguments)
                 {
-                    commandLine.AppendTextUnquoted(scriptArgument);
+                    commandLine.AppendArgumentIfNotNull(scriptArgument);
                 }
             }
 
-            if (ResponseFiles != null)
+            if (ScriptResponseFiles != null)
             {
                 foreach (var scriptResponse in ScriptResponseFiles)
                 {

@@ -1,4 +1,6 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis.CodeFixes
@@ -10,13 +12,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.Diagnostics.ImplementInterface
     Public Class ImplementInterfaceCrossLanguageTests
         Inherits AbstractCrossLanguageUserDiagnosticTest
 
-        Friend Overrides Function CreateDiagnosticProviderAndFixer(workspace As Workspace, language As String) As Tuple(Of DiagnosticAnalyzer, CodeFixProvider)
+        Friend Overrides Function CreateDiagnosticProviderAndFixer(workspace As Workspace, language As String) As (DiagnosticAnalyzer, CodeFixProvider)
             If language = LanguageNames.CSharp Then
                 Throw New NotSupportedException("Please add C# Implement interface tests to CSharpEditorTestTests.csproj. These tests require DiagnosticAnalyzer based test base and are NYI for AbstractCrossLanguageUserDiagnosticTest test base.")
             Else
-                Return Tuple.Create(Of DiagnosticAnalyzer, CodeFixProvider)(
-                    Nothing,
-                    New VisualBasicImplementInterfaceCodeFixProvider())
+                Return (Nothing, New VisualBasicImplementInterfaceCodeFixProvider())
             End If
         End Function
 
@@ -34,7 +34,7 @@ public enum E
 
 public interface I
 {
-    void Foo(E x = E._);
+    void Goo(E x = E._);
 }
                         </Document>
                     </Project>
@@ -53,7 +53,7 @@ End Class
 Class C
     Implements I
  
-    Public Sub Foo(Optional x As E = 1) Implements I.Foo
+    Public Sub Goo(Optional x As E = 1) Implements I.Goo
         Throw New NotImplementedException()
     End Sub
 End Class
@@ -76,7 +76,7 @@ public enum E
 } 
 public interface I
 {
-    void Foo(E x = E.X);
+    void Goo(E x = E.X);
 }
                         </Document>
                     </Project>
@@ -95,7 +95,7 @@ End Class
 Class C
     Implements I
  
-    Public Sub Foo(Optional x As E = 1) Implements I.Foo
+    Public Sub Goo(Optional x As E = 1) Implements I.Goo
         Throw New NotImplementedException()
     End Sub
 End Class
@@ -123,7 +123,7 @@ public enum E
  
 public interface I
 {
-    void Foo(E x = E.A | E.a | E.B);
+    void Goo(E x = E.A | E.a | E.B);
 }
                         </Document>
                     </Project>
@@ -142,7 +142,7 @@ End Class
 Class C
     Implements I 
 
-    Public Sub Foo(Optional x As E = CType(1, E) Or CType(2, E) Or E.B) Implements I.Foo
+    Public Sub Goo(Optional x As E = CType(1, E) Or CType(2, E) Or E.B) Implements I.Goo
         Throw New NotImplementedException()
     End Sub
 End Class
@@ -162,7 +162,7 @@ using System.Runtime.InteropServices;
  
 public interface I
 {
-    void Foo([Optional] int x);
+    void Goo([Optional] int x);
 }
                         </Document>
                     </Project>
@@ -181,7 +181,7 @@ End Class
 Class C
     Implements I 
 
-    Public Sub Foo(Optional x As Integer = Nothing) Implements I.Foo
+    Public Sub Goo(Optional x As Integer = Nothing) Implements I.Goo
         Throw New NotImplementedException()
     End Sub
 End Class
@@ -238,7 +238,7 @@ End Class
                         <Document FilePath='Test1.cs'>
 public interface IA
 {
-    void Foo(int a, int A);
+    void Goo(int a, int A);
 }
                         </Document>
                     </Project>
@@ -257,7 +257,7 @@ End Class
 Class C
     Implements IA
 
-    Public Sub Foo(a1 As Integer, a2 As Integer) Implements IA.Foo
+    Public Sub Goo(a1 As Integer, a2 As Integer) Implements IA.Goo
         Throw New NotImplementedException()
     End Sub
 End Class

@@ -1,21 +1,24 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Roslyn.Utilities;
-
 namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 {
     internal sealed class StatementSyntaxComparer : SyntaxComparer
     {
         internal static readonly StatementSyntaxComparer Default = new StatementSyntaxComparer();
 
-        private readonly SyntaxNode _oldRootChild;
-        private readonly SyntaxNode _newRootChild;
-        private readonly SyntaxNode _oldRoot;
-        private readonly SyntaxNode _newRoot;
+        private readonly SyntaxNode? _oldRootChild;
+        private readonly SyntaxNode? _newRootChild;
+        private readonly SyntaxNode? _oldRoot;
+        private readonly SyntaxNode? _newRoot;
 
         private StatementSyntaxComparer()
         {
@@ -31,7 +34,8 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
         #region Tree Traversal
 
-        protected internal override bool TryGetParent(SyntaxNode node, out SyntaxNode parent)
+#pragma warning disable 8610 // Making the out parameter nullable
+        protected internal override bool TryGetParent(SyntaxNode node, [NotNullWhen(true)] out SyntaxNode? parent)
         {
             parent = node.Parent;
             while (parent != null && !HasLabel(parent))
@@ -41,8 +45,9 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
             return parent != null;
         }
+#pragma warning restore 8610
 
-        protected internal override IEnumerable<SyntaxNode> GetChildren(SyntaxNode node)
+        protected internal override IEnumerable<SyntaxNode>? GetChildren(SyntaxNode node)
         {
             Debug.Assert(HasLabel(node));
 
@@ -82,7 +87,10 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
         private IEnumerable<SyntaxNode> EnumerateRootChildren(SyntaxNode root)
         {
-            Debug.Assert(_oldRoot != null && _newRoot != null);
+            RoslynDebug.Assert(_oldRoot != null);
+            RoslynDebug.Assert(_newRoot != null);
+            RoslynDebug.Assert(_oldRootChild != null);
+            RoslynDebug.Assert(_newRootChild != null);
 
             var child = (root == _oldRoot) ? _oldRootChild : _newRootChild;
 
@@ -103,15 +111,16 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         private bool DescendIntoChildren(SyntaxNode node)
-        {
-            return !LambdaUtilities.IsLambdaBodyStatementOrExpression(node) && !HasLabel(node);
-        }
+            => !LambdaUtilities.IsLambdaBodyStatementOrExpression(node) && !HasLabel(node);
 
         protected internal sealed override IEnumerable<SyntaxNode> GetDescendants(SyntaxNode node)
         {
             if (node == _oldRoot || node == _newRoot)
             {
-                Debug.Assert(_oldRoot != null && _newRoot != null);
+                RoslynDebug.Assert(_oldRoot != null);
+                RoslynDebug.Assert(_newRoot != null);
+                RoslynDebug.Assert(_oldRootChild != null);
+                RoslynDebug.Assert(_newRootChild != null);
 
                 var rootChild = (node == _oldRoot) ? _oldRootChild : _newRootChild;
 
@@ -163,7 +172,6 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             ForStatement,
             ForStatementPart,                 // tied to parent
             ForEachStatement,
-            ForEachComponentStatement,
             UsingStatement,
             FixedStatement,
             LockStatement,
@@ -174,6 +182,10 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
             SwitchStatement,
             SwitchSection,
+            CasePatternSwitchLabel,            // tied to parent
+            SwitchExpression,
+            SwitchExpressionArm,               // tied to parent
+            WhenClause,                        // tied to parent
 
             YieldStatement,                    // tied to parent
             GotoStatement,
@@ -192,11 +204,9 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             LocalVariableDeclaration,          // tied to parent
             LocalVariableDeclarator,           // tied to parent
 
+            SingleVariableDesignation,
             AwaitExpression,
-
-            LocalFunction,
-
-            Lambda,
+            NestedFunction,
 
             FromClause,
             QueryBody,
@@ -232,7 +242,6 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case Label.FinallyClause:
                 case Label.ForStatementPart:
                 case Label.YieldStatement:
-                case Label.LocalFunction:
                 case Label.FromClauseLambda:
                 case Label.LetClauseLambda:
                 case Label.WhereClauseLambda:
@@ -243,6 +252,9 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case Label.JoinIntoClause:
                 case Label.GroupClauseLambda:
                 case Label.QueryContinuation:
+                case Label.CasePatternSwitchLabel:
+                case Label.WhenClause:
+                case Label.SwitchExpressionArm:
                     return 1;
 
                 default:
@@ -251,9 +263,9 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         /// <summary>
-        /// <paramref name="nodeOpt"/> is null only when comparing value equality of a tree node.
+        /// <paramref name="node"/> is null only when comparing value equality of a tree node.
         /// </summary>
-        internal static Label Classify(SyntaxKind kind, SyntaxNode nodeOpt, out bool isLeaf)
+        internal static Label Classify(SyntaxKind kind, SyntaxNode? node, out bool isLeaf)
         {
             // Notes:
             // A descendant of a leaf node may be a labeled node that we don't want to visit if 
@@ -268,7 +280,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             // We need to capture it in the match since these expressions can be "active statements" and as such we need to map them.
             //
             // The parent is not available only when comparing nodes for value equality.
-            if (nodeOpt != null && nodeOpt.Parent.IsKind(SyntaxKind.ForStatement) && nodeOpt is ExpressionSyntax)
+            if (node != null && node.Parent.IsKind(SyntaxKind.ForStatement) && node is ExpressionSyntax)
             {
                 return Label.ForStatementPart;
             }
@@ -291,12 +303,15 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.VariableDeclarator:
                     return Label.LocalVariableDeclarator;
 
+                case SyntaxKind.SingleVariableDesignation:
+                    return Label.SingleVariableDesignation;
+
                 case SyntaxKind.LabeledStatement:
                     return Label.LabeledStatement;
 
                 case SyntaxKind.EmptyStatement:
                     isLeaf = true;
-                    return Label.Ignored;
+                    return Label.ExpressionStatement;
 
                 case SyntaxKind.GotoStatement:
                     isLeaf = true;
@@ -332,11 +347,9 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.ForStatement:
                     return Label.ForStatement;
 
+                case SyntaxKind.ForEachVariableStatement:
                 case SyntaxKind.ForEachStatement:
                     return Label.ForEachStatement;
-
-                case SyntaxKind.ForEachVariableStatement:
-                    return Label.ForEachComponentStatement;
 
                 case SyntaxKind.UsingStatement:
                     return Label.UsingStatement;
@@ -373,6 +386,18 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     isLeaf = true;
                     return Label.Ignored;
 
+                case SyntaxKind.WhenClause:
+                    return Label.WhenClause;
+
+                case SyntaxKind.CasePatternSwitchLabel:
+                    return Label.CasePatternSwitchLabel;
+
+                case SyntaxKind.SwitchExpression:
+                    return Label.SwitchExpression;
+
+                case SyntaxKind.SwitchExpressionArm:
+                    return Label.SwitchExpressionArm;
+
                 case SyntaxKind.TryStatement:
                     return Label.TryStatement;
 
@@ -390,12 +415,10 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     return Label.FinallyClause;
 
                 case SyntaxKind.LocalFunctionStatement:
-                    return Label.LocalFunction;
-
                 case SyntaxKind.ParenthesizedLambdaExpression:
                 case SyntaxKind.SimpleLambdaExpression:
                 case SyntaxKind.AnonymousMethodExpression:
-                    return Label.Lambda;
+                    return Label.NestedFunction;
 
                 case SyntaxKind.FromClause:
                     // The first from clause of a query is not a lambda.
@@ -408,7 +431,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     // 
                     // The parent is not available only when comparing nodes for value equality.
                     // In that case it doesn't matter what label the node has as long as it has some.
-                    if (nodeOpt == null || nodeOpt.Parent.IsKind(SyntaxKind.QueryExpression))
+                    if (node == null || node.Parent.IsKind(SyntaxKind.QueryExpression))
                     {
                         return Label.FromClause;
                     }
@@ -452,13 +475,12 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.TypeArgumentList:
                 case SyntaxKind.AliasQualifiedName:
                 case SyntaxKind.PredefinedType:
-                case SyntaxKind.ArrayType:
-                case SyntaxKind.ArrayRankSpecifier:
                 case SyntaxKind.PointerType:
                 case SyntaxKind.NullableType:
+                case SyntaxKind.TupleType:
+                case SyntaxKind.RefType:
                 case SyntaxKind.OmittedTypeArgument:
                 case SyntaxKind.NameColon:
-                case SyntaxKind.StackAllocArrayCreationExpression:
                 case SyntaxKind.OmittedArraySizeExpression:
                 case SyntaxKind.ThisExpression:
                 case SyntaxKind.BaseExpression:
@@ -472,6 +494,8 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.TypeOfExpression:
                 case SyntaxKind.SizeOfExpression:
                 case SyntaxKind.DefaultExpression:
+                case SyntaxKind.ConstantPattern:
+                case SyntaxKind.DiscardDesignation:
                     // can't contain a lambda/await/anonymous type:
                     isLeaf = true;
                     return Label.Ignored;
@@ -486,19 +510,13 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         protected internal override int GetLabel(SyntaxNode node)
-        {
-            return (int)GetLabelImpl(node);
-        }
+            => (int)GetLabelImpl(node);
 
         internal static Label GetLabelImpl(SyntaxNode node)
-        {
-            return Classify(node.Kind(), node, out var isLeaf);
-        }
+            => Classify(node.Kind(), node, out _);
 
         internal static bool HasLabel(SyntaxNode node)
-        {
-            return GetLabelImpl(node) != Label.Ignored;
-        }
+            => GetLabelImpl(node) != Label.Ignored;
 
         protected internal override int LabelCount
         {
@@ -506,9 +524,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         protected internal override int TiedToAncestor(int label)
-        {
-            return TiedToAncestor((Label)label);
-        }
+            => TiedToAncestor((Label)label);
 
         #endregion
 
@@ -520,7 +536,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             // The only cases when we can't are
             // - for Initializer, Condition and Incrementor expressions in ForStatement.
             // - first from clause of a query expression.
-            return Classify(kind, null, out var isLeaf) != Label.Ignored;
+            return Classify(kind, node: null, out _) != Label.Ignored;
         }
 
         public override bool ValuesEqual(SyntaxNode left, SyntaxNode right)
@@ -529,7 +545,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             Debug.Assert(HasLabel(left));
             Debug.Assert(HasLabel(right));
 
-            Func<SyntaxKind, bool> ignoreChildNode;
+            Func<SyntaxKind, bool>? ignoreChildNode;
             switch (left.Kind())
             {
                 case SyntaxKind.SwitchSection:
@@ -558,7 +574,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             return SyntaxFactory.AreEquivalent(left, right, ignoreChildNode);
         }
 
-        private bool Equal(SwitchSectionSyntax left, SwitchSectionSyntax right)
+        private static bool Equal(SwitchSectionSyntax left, SwitchSectionSyntax right)
         {
             return SyntaxFactory.AreEquivalent(left.Labels, right.Labels, null)
                 && SyntaxFactory.AreEquivalent(left.Statements, right.Statements, ignoreChildNode: IgnoreLabeledChild);
@@ -581,9 +597,11 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     return true;
 
                 case SyntaxKind.ForEachStatement:
+                case SyntaxKind.ForEachVariableStatement:
                     {
-                        var leftForEach = (ForEachStatementSyntax)leftNode;
-                        var rightForEach = (ForEachStatementSyntax)rightNode;
+
+                        var leftForEach = (CommonForEachStatementSyntax)leftNode;
+                        var rightForEach = (CommonForEachStatementSyntax)rightNode;
                         distance = ComputeWeightedDistance(leftForEach, rightForEach);
                         return true;
                     }
@@ -603,9 +621,9 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     else
                     {
                         distance = ComputeWeightedDistance(
-                            (SyntaxNode)leftUsing.Expression ?? leftUsing.Declaration,
+                            (SyntaxNode?)leftUsing.Expression ?? leftUsing.Declaration!,
                             leftUsing.Statement,
-                            (SyntaxNode)rightUsing.Expression ?? rightUsing.Declaration,
+                            (SyntaxNode?)rightUsing.Expression ?? rightUsing.Declaration!,
                             rightUsing.Statement);
                     }
 
@@ -642,8 +660,8 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     return true;
 
                 case SyntaxKind.Block:
-                    BlockSyntax leftBlock = (BlockSyntax)leftNode;
-                    BlockSyntax rightBlock = (BlockSyntax)rightNode;
+                    var leftBlock = (BlockSyntax)leftNode;
+                    var rightBlock = (BlockSyntax)rightNode;
                     return TryComputeWeightedDistance(leftBlock, rightBlock, out distance);
 
                 case SyntaxKind.CatchClause:
@@ -653,11 +671,8 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 case SyntaxKind.ParenthesizedLambdaExpression:
                 case SyntaxKind.SimpleLambdaExpression:
                 case SyntaxKind.AnonymousMethodExpression:
-                    distance = ComputeWeightedDistanceOfLambdas(leftNode, rightNode);
-                    return true;
-
                 case SyntaxKind.LocalFunctionStatement:
-                    distance = ComputeWeightedDistanceOfLocalFunctions((LocalFunctionStatementSyntax)leftNode, (LocalFunctionStatementSyntax)rightNode);
+                    distance = ComputeWeightedDistanceOfNestedFunctions(leftNode, rightNode);
                     return true;
 
                 case SyntaxKind.YieldBreakStatement:
@@ -666,20 +681,32 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     distance = (leftNode.RawKind == rightNode.RawKind) ? 0.0 : 0.1;
                     return true;
 
+                case SyntaxKind.SingleVariableDesignation:
+                    distance = ComputeWeightedDistance((SingleVariableDesignationSyntax)leftNode, (SingleVariableDesignationSyntax)rightNode);
+                    return true;
+
                 default:
                     distance = 0;
                     return false;
             }
         }
 
-        private static double ComputeWeightedDistanceOfLocalFunctions(LocalFunctionStatementSyntax leftNode, LocalFunctionStatementSyntax rightNode)
+        private static double ComputeWeightedDistanceOfNestedFunctions(SyntaxNode leftNode, SyntaxNode rightNode)
         {
-            double modifierDistance = ComputeDistance(leftNode.Modifiers, rightNode.Modifiers);
-            double returnTypeDistance = ComputeDistance(leftNode.ReturnType, rightNode.ReturnType);
-            double identifierDistance = ComputeDistance(leftNode.Identifier, rightNode.Identifier);
-            double typeParameterDistance = ComputeDistance(leftNode.TypeParameterList, rightNode.TypeParameterList);
-            double parameterDistance = ComputeDistance(leftNode.ParameterList.Parameters, rightNode.ParameterList.Parameters);
-            double bodyDistance = ComputeDistance((SyntaxNode)leftNode.Body ?? leftNode.ExpressionBody, (SyntaxNode)rightNode.Body ?? rightNode.ExpressionBody);
+            GetNestedFunctionsParts(leftNode, out var leftParameters, out var leftAsync, out var leftBody, out var leftModifiers, out var leftReturnType, out var leftIdentifier, out var leftTypeParameters);
+            GetNestedFunctionsParts(rightNode, out var rightParameters, out var rightAsync, out var rightBody, out var rightModifiers, out var rightReturnType, out var rightIdentifier, out var rightTypeParameters);
+
+            if ((leftAsync.Kind() == SyntaxKind.AsyncKeyword) != (rightAsync.Kind() == SyntaxKind.AsyncKeyword))
+            {
+                return 1.0;
+            }
+
+            var modifierDistance = ComputeDistance(leftModifiers, rightModifiers);
+            var returnTypeDistance = ComputeDistance(leftReturnType, rightReturnType);
+            var identifierDistance = ComputeDistance(leftIdentifier, rightIdentifier);
+            var typeParameterDistance = ComputeDistance(leftTypeParameters, rightTypeParameters);
+            var parameterDistance = ComputeDistance(leftParameters, rightParameters);
+            var bodyDistance = ComputeDistance(leftBody, rightBody);
 
             return
                 modifierDistance * 0.1 +
@@ -690,42 +717,42 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 bodyDistance * 0.2;
         }
 
-        private static double ComputeWeightedDistanceOfLambdas(SyntaxNode leftNode, SyntaxNode rightNode)
+        private static void GetNestedFunctionsParts(
+            SyntaxNode nestedFunction,
+            out IEnumerable<SyntaxToken> parameters,
+            out SyntaxToken asyncKeyword,
+            out SyntaxNode body,
+            out SyntaxTokenList modifiers,
+            out TypeSyntax? returnType,
+            out SyntaxToken identifier,
+            out TypeParameterListSyntax? typeParameters)
         {
-            GetLambdaParts(leftNode, out var leftParameters, out var leftAsync, out var leftBody);
-            GetLambdaParts(rightNode, out var rightParameters, out var rightAsync, out var rightBody);
-
-            if ((leftAsync.Kind() == SyntaxKind.AsyncKeyword) != (rightAsync.Kind() == SyntaxKind.AsyncKeyword))
-            {
-                return 1.0;
-            }
-
-            double parameterDistance = ComputeDistance(leftParameters, rightParameters);
-            double bodyDistance = ComputeDistance(leftBody, rightBody);
-
-            return parameterDistance * 0.6 + bodyDistance * 0.4;
-        }
-
-        private static void GetLambdaParts(SyntaxNode lambda, out IEnumerable<SyntaxToken> parameters, out SyntaxToken asyncKeyword, out SyntaxNode body)
-        {
-            switch (lambda.Kind())
+            switch (nestedFunction.Kind())
             {
                 case SyntaxKind.SimpleLambdaExpression:
-                    var simple = (SimpleLambdaExpressionSyntax)lambda;
+                    var simple = (SimpleLambdaExpressionSyntax)nestedFunction;
                     parameters = simple.Parameter.DescendantTokens();
                     asyncKeyword = simple.AsyncKeyword;
                     body = simple.Body;
+                    modifiers = default;
+                    returnType = null;
+                    identifier = default;
+                    typeParameters = null;
                     break;
 
                 case SyntaxKind.ParenthesizedLambdaExpression:
-                    var parenthesized = (ParenthesizedLambdaExpressionSyntax)lambda;
+                    var parenthesized = (ParenthesizedLambdaExpressionSyntax)nestedFunction;
                     parameters = GetDescendantTokensIgnoringSeparators(parenthesized.ParameterList.Parameters);
                     asyncKeyword = parenthesized.AsyncKeyword;
                     body = parenthesized.Body;
+                    modifiers = default;
+                    returnType = null;
+                    identifier = default;
+                    typeParameters = null;
                     break;
 
                 case SyntaxKind.AnonymousMethodExpression:
-                    var anonymous = (AnonymousMethodExpressionSyntax)lambda;
+                    var anonymous = (AnonymousMethodExpressionSyntax)nestedFunction;
                     if (anonymous.ParameterList != null)
                     {
                         parameters = GetDescendantTokensIgnoringSeparators(anonymous.ParameterList.Parameters);
@@ -737,10 +764,25 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
                     asyncKeyword = anonymous.AsyncKeyword;
                     body = anonymous.Block;
+                    modifiers = default;
+                    returnType = null;
+                    identifier = default;
+                    typeParameters = null;
+                    break;
+
+                case SyntaxKind.LocalFunctionStatement:
+                    var localFunction = (LocalFunctionStatementSyntax)nestedFunction;
+                    parameters = GetDescendantTokensIgnoringSeparators(localFunction.ParameterList.Parameters);
+                    asyncKeyword = default;
+                    body = (SyntaxNode?)localFunction.Body ?? localFunction.ExpressionBody!;
+                    modifiers = localFunction.Modifiers;
+                    returnType = localFunction.ReturnType;
+                    identifier = localFunction.Identifier;
+                    typeParameters = localFunction.TypeParameterList;
                     break;
 
                 default:
-                    throw ExceptionUtilities.Unreachable;
+                    throw ExceptionUtilities.UnexpectedValue(nestedFunction.Kind());
             }
         }
 
@@ -758,7 +800,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                 return true;
             }
 
-            if (leftBlock.Parent.Kind() != rightBlock.Parent.Kind())
+            if (GetLabel(leftBlock.Parent) != GetLabel(rightBlock.Parent))
             {
                 distance = 0.2 + 0.8 * ComputeWeightedBlockDistance(leftBlock, rightBlock);
                 return true;
@@ -789,8 +831,8 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     if (leftCatch.Declaration == null && leftCatch.Filter == null &&
                         rightCatch.Declaration == null && rightCatch.Filter == null)
                     {
-                        var leftTry = (TryStatementSyntax)leftCatch.Parent;
-                        var rightTry = (TryStatementSyntax)rightCatch.Parent;
+                        var leftTry = (TryStatementSyntax)leftCatch.Parent!;
+                        var rightTry = (TryStatementSyntax)rightCatch.Parent!;
 
                         distance = 0.5 * ComputeValueDistance(leftTry.Block, rightTry.Block) +
                                    0.5 * ComputeValueDistance(leftBlock, rightBlock);
@@ -818,8 +860,27 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
                     return true;
 
                 default:
-                    throw ExceptionUtilities.Unreachable;
+                    throw ExceptionUtilities.UnexpectedValue(leftBlock.Parent.Kind());
             }
+        }
+
+        private double ComputeWeightedDistance(SingleVariableDesignationSyntax leftNode, SingleVariableDesignationSyntax rightNode)
+        {
+            var distance = ComputeDistance(leftNode, rightNode);
+            double parentDistance;
+
+            if (leftNode.Parent != null &&
+                rightNode.Parent != null &&
+                GetLabel(leftNode.Parent) == GetLabel(rightNode.Parent))
+            {
+                parentDistance = ComputeDistance(leftNode.Parent, rightNode.Parent);
+            }
+            else
+            {
+                parentDistance = 1;
+            }
+
+            return 0.5 * parentDistance + 0.5 * distance;
         }
 
         private static double ComputeWeightedBlockDistance(BlockSyntax leftBlock, BlockSyntax rightBlock)
@@ -834,30 +895,38 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
         private static double ComputeWeightedDistance(CatchClauseSyntax left, CatchClauseSyntax right)
         {
-            double blockDistance = ComputeDistance(left.Block, right.Block);
-            double distance = CombineOptional(blockDistance, left.Declaration, right.Declaration, left.Filter, right.Filter);
+            var blockDistance = ComputeDistance(left.Block, right.Block);
+            var distance = CombineOptional(blockDistance, left.Declaration, right.Declaration, left.Filter, right.Filter);
             return AdjustForLocalsInBlock(distance, left.Block, right.Block, localsWeight: 0.3);
         }
 
-        private static double ComputeWeightedDistance(ForEachStatementSyntax left, ForEachStatementSyntax right)
+        private static double ComputeWeightedDistance(
+            CommonForEachStatementSyntax leftCommonForEach,
+            CommonForEachStatementSyntax rightCommonForEach)
         {
-            double statementDistance = ComputeDistance(left.Statement, right.Statement);
-            double expressionDistance = ComputeDistance(left.Expression, right.Expression);
-            double identifierDistance = ComputeDistance(left.Identifier, right.Identifier);
+            var statementDistance = ComputeDistance(leftCommonForEach.Statement, rightCommonForEach.Statement);
+            var expressionDistance = ComputeDistance(leftCommonForEach.Expression, rightCommonForEach.Expression);
 
-            double distance = identifierDistance * 0.7 + expressionDistance * 0.2 + statementDistance * 0.1;
-            return AdjustForLocalsInBlock(distance, left.Statement, right.Statement, localsWeight: 0.6);
+            List<SyntaxToken>? leftLocals = null;
+            List<SyntaxToken>? rightLocals = null;
+            GetLocalNames(leftCommonForEach, ref leftLocals);
+            GetLocalNames(rightCommonForEach, ref rightLocals);
+
+            var localNamesDistance = ComputeDistance(leftLocals, rightLocals);
+
+            var distance = localNamesDistance * 0.6 + expressionDistance * 0.2 + statementDistance * 0.2;
+            return AdjustForLocalsInBlock(distance, leftCommonForEach.Statement, rightCommonForEach.Statement, localsWeight: 0.6);
         }
 
         private static double ComputeWeightedDistance(ForStatementSyntax left, ForStatementSyntax right)
         {
-            double statementDistance = ComputeDistance(left.Statement, right.Statement);
-            double conditionDistance = ComputeDistance(left.Condition, right.Condition);
+            var statementDistance = ComputeDistance(left.Statement, right.Statement);
+            var conditionDistance = ComputeDistance(left.Condition, right.Condition);
 
-            double incDistance = ComputeDistance(
+            var incDistance = ComputeDistance(
                 GetDescendantTokensIgnoringSeparators(left.Incrementors), GetDescendantTokensIgnoringSeparators(right.Incrementors));
 
-            double distance = conditionDistance * 0.3 + incDistance * 0.3 + statementDistance * 0.4;
+            var distance = conditionDistance * 0.3 + incDistance * 0.3 + statementDistance * 0.4;
             if (TryComputeLocalsDistance(left.Declaration, right.Declaration, out var localsDistance))
             {
                 distance = distance * 0.4 + localsDistance * 0.6;
@@ -872,7 +941,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             VariableDeclarationSyntax rightVariables,
             StatementSyntax rightStatement)
         {
-            double distance = ComputeDistance(leftStatement, rightStatement);
+            var distance = ComputeDistance(leftStatement, rightStatement);
             // Put maximum weight behind the variables declared in the header of the statement.
             if (TryComputeLocalsDistance(leftVariables, rightVariables, out var localsDistance))
             {
@@ -885,17 +954,14 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
         }
 
         private static double ComputeWeightedDistance(
-            SyntaxNode leftHeaderOpt,
+            SyntaxNode? leftHeader,
             StatementSyntax leftStatement,
-            SyntaxNode rightHeaderOpt,
+            SyntaxNode? rightHeader,
             StatementSyntax rightStatement)
         {
-            Debug.Assert(leftStatement != null);
-            Debug.Assert(rightStatement != null);
-
-            double headerDistance = ComputeDistance(leftHeaderOpt, rightHeaderOpt);
-            double statementDistance = ComputeDistance(leftStatement, rightStatement);
-            double distance = headerDistance * 0.6 + statementDistance * 0.4;
+            var headerDistance = ComputeDistance(leftHeader, rightHeader);
+            var statementDistance = ComputeDistance(leftStatement, rightStatement);
+            var distance = headerDistance * 0.6 + statementDistance * 0.4;
 
             return AdjustForLocalsInBlock(distance, leftStatement, rightStatement, localsWeight: 0.5);
         }
@@ -919,19 +985,19 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             return distance;
         }
 
-        private static bool TryComputeLocalsDistance(VariableDeclarationSyntax leftOpt, VariableDeclarationSyntax rightOpt, out double distance)
+        private static bool TryComputeLocalsDistance(VariableDeclarationSyntax? left, VariableDeclarationSyntax? right, out double distance)
         {
-            List<SyntaxToken> leftLocals = null;
-            List<SyntaxToken> rightLocals = null;
+            List<SyntaxToken>? leftLocals = null;
+            List<SyntaxToken>? rightLocals = null;
 
-            if (leftOpt != null)
+            if (left != null)
             {
-                GetLocalNames(leftOpt, ref leftLocals);
+                GetLocalNames(left, ref leftLocals);
             }
 
-            if (rightOpt != null)
+            if (right != null)
             {
-                GetLocalNames(rightOpt, ref rightLocals);
+                GetLocalNames(right, ref rightLocals);
             }
 
             if (leftLocals == null || rightLocals == null)
@@ -946,8 +1012,8 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
 
         private static bool TryComputeLocalsDistance(BlockSyntax left, BlockSyntax right, out double distance)
         {
-            List<SyntaxToken> leftLocals = null;
-            List<SyntaxToken> rightLocals = null;
+            List<SyntaxToken>? leftLocals = null;
+            List<SyntaxToken>? rightLocals = null;
 
             GetLocalNames(left, ref leftLocals);
             GetLocalNames(right, ref rightLocals);
@@ -962,51 +1028,120 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue
             return true;
         }
 
-        // doesn't include variables declared in declaration expressions
-        private static void GetLocalNames(BlockSyntax block, ref List<SyntaxToken> result)
+        // Doesn't include variables declared in declaration expressions
+        // Consider including them (https://github.com/dotnet/roslyn/issues/37460).
+        private static void GetLocalNames(BlockSyntax block, ref List<SyntaxToken>? result)
         {
             foreach (var child in block.ChildNodes())
             {
-                if (child.IsKind(SyntaxKind.LocalDeclarationStatement))
+                if (child.IsKind(SyntaxKind.LocalDeclarationStatement, out LocalDeclarationStatementSyntax? localDecl))
                 {
-                    GetLocalNames(((LocalDeclarationStatementSyntax)child).Declaration, ref result);
+                    GetLocalNames(localDecl.Declaration, ref result);
                 }
             }
         }
 
-        // doesn't include variables declared in declaration expressions
-        private static void GetLocalNames(VariableDeclarationSyntax localDeclaration, ref List<SyntaxToken> result)
+        // Doesn't include variables declared in declaration expressions
+        // Consider including them (https://github.com/dotnet/roslyn/issues/37460).
+        private static void GetLocalNames(VariableDeclarationSyntax localDeclaration, ref List<SyntaxToken>? result)
         {
             foreach (var local in localDeclaration.Variables)
             {
-                if (result == null)
-                {
-                    result = new List<SyntaxToken>();
-                }
-
-                result.Add(local.Identifier);
+                GetLocalNames(local.Identifier, ref result);
             }
+        }
+
+        internal static void GetLocalNames(CommonForEachStatementSyntax commonForEach, ref List<SyntaxToken>? result)
+        {
+            switch (commonForEach.Kind())
+            {
+                case SyntaxKind.ForEachStatement:
+                    GetLocalNames(((ForEachStatementSyntax)commonForEach).Identifier, ref result);
+                    return;
+
+                case SyntaxKind.ForEachVariableStatement:
+                    var forEachVariable = (ForEachVariableStatementSyntax)commonForEach;
+                    GetLocalNames(forEachVariable.Variable, ref result);
+                    return;
+
+                default:
+                    throw ExceptionUtilities.UnexpectedValue(commonForEach.Kind());
+            }
+        }
+
+        private static void GetLocalNames(ExpressionSyntax expression, ref List<SyntaxToken>? result)
+        {
+            switch (expression.Kind())
+            {
+                case SyntaxKind.DeclarationExpression:
+                    var declarationExpression = (DeclarationExpressionSyntax)expression;
+                    var localDeclaration = declarationExpression.Designation;
+                    GetLocalNames(localDeclaration, ref result);
+                    return;
+
+                case SyntaxKind.TupleExpression:
+                    var tupleExpression = (TupleExpressionSyntax)expression;
+                    foreach (var argument in tupleExpression.Arguments)
+                    {
+                        GetLocalNames(argument.Expression, ref result);
+                    }
+                    return;
+
+                default:
+                    // Do nothing for node that cannot have variable declarations inside.
+                    return;
+            }
+        }
+
+        private static void GetLocalNames(VariableDesignationSyntax designation, ref List<SyntaxToken>? result)
+        {
+            switch (designation.Kind())
+            {
+                case SyntaxKind.SingleVariableDesignation:
+                    GetLocalNames(((SingleVariableDesignationSyntax)designation).Identifier, ref result);
+                    return;
+
+                case SyntaxKind.ParenthesizedVariableDesignation:
+                    var parenthesizedVariableDesignation = (ParenthesizedVariableDesignationSyntax)designation;
+                    foreach (var variableDesignation in parenthesizedVariableDesignation.Variables)
+                    {
+                        GetLocalNames(variableDesignation, ref result);
+                    }
+                    return;
+
+                case SyntaxKind.DiscardDesignation:
+                    return;
+
+                default:
+                    throw ExceptionUtilities.UnexpectedValue(designation.Kind());
+            }
+        }
+
+        private static void GetLocalNames(SyntaxToken syntaxToken, [NotNull] ref List<SyntaxToken>? result)
+        {
+            result ??= new List<SyntaxToken>();
+            result.Add(syntaxToken);
         }
 
         private static double CombineOptional(
             double distance0,
-            SyntaxNode leftOpt1,
-            SyntaxNode rightOpt1,
-            SyntaxNode leftOpt2,
-            SyntaxNode rightOpt2,
+            SyntaxNode? left1,
+            SyntaxNode? right1,
+            SyntaxNode? left2,
+            SyntaxNode? right2,
             double weight0 = 0.8,
             double weight1 = 0.5)
         {
-            bool one = leftOpt1 != null || rightOpt1 != null;
-            bool two = leftOpt2 != null || rightOpt2 != null;
+            var one = left1 != null || right1 != null;
+            var two = left2 != null || right2 != null;
 
             if (!one && !two)
             {
                 return distance0;
             }
 
-            double distance1 = ComputeDistance(leftOpt1, rightOpt1);
-            double distance2 = ComputeDistance(leftOpt2, rightOpt2);
+            var distance1 = ComputeDistance(left1, right1);
+            var distance2 = ComputeDistance(left2, right2);
 
             double d;
             if (one && two)

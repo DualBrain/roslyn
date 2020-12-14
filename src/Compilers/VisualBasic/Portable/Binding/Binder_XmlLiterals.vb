@@ -1,9 +1,12 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Generic
 Imports System.Collections.Immutable
 Imports System.Runtime.InteropServices
 Imports Microsoft.CodeAnalysis.Collections
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 
@@ -670,7 +673,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             If memberAccess Is Nothing Then
-                memberAccess = BadExpression(syntax, ImmutableArray.Create(Of BoundNode)(receiver, name), Compilation.GetSpecialType(SpecialType.System_String))
+                memberAccess = BadExpression(syntax, ImmutableArray.Create(receiver, name), Compilation.GetSpecialType(SpecialType.System_String))
             End If
 
             Return New BoundXmlMemberAccess(syntax, memberAccess, memberAccess.Type)
@@ -730,7 +733,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             If memberAccess Is Nothing Then
-                memberAccess = BadExpression(syntax, ImmutableArray.Create(Of BoundNode)(receiver, name), ErrorTypeSymbol.UnknownResultType)
+                memberAccess = BadExpression(syntax, ImmutableArray.Create(receiver, name), ErrorTypeSymbol.UnknownResultType)
             End If
 
             Return New BoundXmlMemberAccess(syntax, memberAccess, memberAccess.Type)
@@ -1015,7 +1018,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ''' </summary>
         Private Function BindInvocationExpressionIfGroupNotNothing(syntax As SyntaxNode, groupOpt As BoundMethodOrPropertyGroup, arguments As ImmutableArray(Of BoundExpression), diagnostics As DiagnosticBag) As BoundExpression
             If groupOpt Is Nothing Then
-                Return BadExpression(syntax, StaticCast(Of BoundNode).From(arguments), ErrorTypeSymbol.UnknownResultType)
+                Return BadExpression(syntax, arguments, ErrorTypeSymbol.UnknownResultType)
             Else
                 Return BindInvocationExpression(syntax,
                                                 syntax,

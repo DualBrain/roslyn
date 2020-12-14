@@ -1,12 +1,18 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System;
-using System.Collections.Concurrent;
+#nullable disable
+
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
-using Microsoft.CodeAnalysis.FindUsages;
+using Microsoft.CodeAnalysis.Classification;
 using Microsoft.CodeAnalysis.FindSymbols;
+using Microsoft.CodeAnalysis.FindUsages;
 using Microsoft.CodeAnalysis.Navigation;
+using Microsoft.CodeAnalysis.Shared.Utilities;
+using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor.FindUsages
@@ -14,12 +20,41 @@ namespace Microsoft.CodeAnalysis.Editor.FindUsages
     internal abstract partial class AbstractFindUsagesService
     {
         /// <summary>
+        /// Forwards <see cref="IStreamingFindLiteralReferencesProgress"/> calls to an
+        /// <see cref="IFindUsagesContext"/> instance.
+        /// </summary>
+        private class FindLiteralsProgressAdapter : IStreamingFindLiteralReferencesProgress
+        {
+            private readonly IFindUsagesContext _context;
+            private readonly DefinitionItem _definition;
+
+            public IStreamingProgressTracker ProgressTracker
+                => _context.ProgressTracker;
+
+            public FindLiteralsProgressAdapter(
+                IFindUsagesContext context, DefinitionItem definition)
+            {
+                _context = context;
+                _definition = definition;
+            }
+
+            public async ValueTask OnReferenceFoundAsync(Document document, TextSpan span)
+            {
+                var documentSpan = await ClassifiedSpansAndHighlightSpanFactory.GetClassifiedDocumentSpanAsync(
+                    document, span, _context.CancellationToken).ConfigureAwait(false);
+                await _context.OnReferenceFoundAsync(new SourceReferenceItem(
+                    _definition, documentSpan, SymbolUsageInfo.None)).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
         /// Forwards IFindReferencesProgress calls to an IFindUsagesContext instance.
         /// </summary>
-        private class ProgressAdapter : ForegroundThreadAffinitizedObject, IStreamingFindReferencesProgress
+        private class FindReferencesProgressAdapter : IStreamingFindReferencesProgress
         {
             private readonly Solution _solution;
             private readonly IFindUsagesContext _context;
+            private readonly FindReferencesSearchOptions _options;
 
             /// <summary>
             /// We will hear about definition symbols many times while performing FAR.  We'll
@@ -31,72 +66,70 @@ namespace Microsoft.CodeAnalysis.Editor.FindUsages
             /// This dictionary allows us to make that mapping once and then keep it around for
             /// all future callbacks.
             /// </summary>
-            private readonly ConcurrentDictionary<ISymbol, DefinitionItem> _definitionToItem =
-                new ConcurrentDictionary<ISymbol, DefinitionItem>(MetadataUnifyingEquivalenceComparer.Instance);
+            private readonly Dictionary<ISymbol, DefinitionItem> _definitionToItem =
+                new(MetadataUnifyingEquivalenceComparer.Instance);
 
-            private readonly Func<ISymbol, DefinitionItem> _definitionFactory;
+            private readonly SemaphoreSlim _gate = new(initialCount: 1);
 
-            public ProgressAdapter(Solution solution, IFindUsagesContext context)
+            public IStreamingProgressTracker ProgressTracker
+                => _context.ProgressTracker;
+
+            public FindReferencesProgressAdapter(
+                Solution solution, IFindUsagesContext context, FindReferencesSearchOptions options)
             {
                 _solution = solution;
                 _context = context;
-                _definitionFactory = s => s.ToDefinitionItem(solution, includeHiddenLocations: false);
+                _options = options;
             }
 
             // Do nothing functions.  The streaming far service doesn't care about
             // any of these.
-            public Task OnStartedAsync() => SpecializedTasks.EmptyTask;
-            public Task OnCompletedAsync() => SpecializedTasks.EmptyTask;
-            public Task OnFindInDocumentStartedAsync(Document document) => SpecializedTasks.EmptyTask;
-            public Task OnFindInDocumentCompletedAsync(Document document) => SpecializedTasks.EmptyTask;
-
-            // Simple context forwarding functions.
-            public Task ReportProgressAsync(int current, int maximum) => 
-                _context.ReportProgressAsync(current, maximum);
+            public ValueTask OnStartedAsync() => default;
+            public ValueTask OnCompletedAsync() => default;
+            public ValueTask OnFindInDocumentStartedAsync(Document document) => default;
+            public ValueTask OnFindInDocumentCompletedAsync(Document document) => default;
 
             // More complicated forwarding functions.  These need to map from the symbols
             // used by the FAR engine to the INavigableItems used by the streaming FAR 
             // feature.
 
-            private DefinitionItem GetDefinitionItem(SymbolAndProjectId definition)
+            private async ValueTask<DefinitionItem> GetDefinitionItemAsync(ISymbol definition)
             {
-                return _definitionToItem.GetOrAdd(definition.Symbol, _definitionFactory);
-            }
-
-            public Task OnDefinitionFoundAsync(SymbolAndProjectId definition)
-            {
-                return _context.OnDefinitionFoundAsync(GetDefinitionItem(definition));
-            }
-
-            public async Task OnReferenceFoundAsync(SymbolAndProjectId definition, ReferenceLocation location)
-            {
-                // Ignore duplicate locations.  We don't want to clutter the UI with them.
-                if (location.IsDuplicateReferenceLocation)
+                var cancellationToken = _context.CancellationToken;
+                using (await _gate.DisposableWaitAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    return;
-                }
+                    if (!_definitionToItem.TryGetValue(definition, out var definitionItem))
+                    {
+                        definitionItem = await definition.ToClassifiedDefinitionItemAsync(
+                            _solution,
+                            isPrimary: _definitionToItem.Count == 0,
+                            includeHiddenLocations: false,
+                            _options,
+                            _context.CancellationToken).ConfigureAwait(false);
 
-                var referenceItem = location.TryCreateSourceReferenceItem(
-                    GetDefinitionItem(definition), includeHiddenLocations: false);
+                        _definitionToItem[definition] = definitionItem;
+                    }
+
+                    return definitionItem;
+                }
+            }
+
+            public async ValueTask OnDefinitionFoundAsync(ISymbol definition)
+            {
+                var definitionItem = await GetDefinitionItemAsync(definition).ConfigureAwait(false);
+                await _context.OnDefinitionFoundAsync(definitionItem).ConfigureAwait(false);
+            }
+
+            public async ValueTask OnReferenceFoundAsync(ISymbol definition, ReferenceLocation location)
+            {
+                var definitionItem = await GetDefinitionItemAsync(definition).ConfigureAwait(false);
+                var referenceItem = await location.TryCreateSourceReferenceItemAsync(
+                    definitionItem, includeHiddenLocations: false,
+                    cancellationToken: _context.CancellationToken).ConfigureAwait(false);
 
                 if (referenceItem != null)
                 {
                     await _context.OnReferenceFoundAsync(referenceItem).ConfigureAwait(false);
-                }
-            }
-
-            public async Task CallThirdPartyExtensionsAsync()
-            {
-                var factory = _solution.Workspace.Services.GetService<IDefinitionsAndReferencesFactory>();
-                foreach (var definition in _definitionToItem.Keys)
-                {
-                    var item = factory.GetThirdPartyDefinitionItem(_solution, definition);
-                    if (item != null)
-                    {
-                        // ConfigureAwait(true) because we want to come back on the 
-                        // same thread after calling into extensions.
-                        await _context.OnDefinitionFoundAsync(item).ConfigureAwait(true);
-                    }
                 }
             }
         }

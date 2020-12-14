@@ -1,9 +1,12 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
 Imports System.Runtime.InteropServices
 Imports Microsoft.CodeAnalysis.CodeGen
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
@@ -71,7 +74,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             If instrument Then
                 ' Add select case begin sequence point
-                Dim prologue As BoundStatement = _instrumenter.CreateSelectStatementPrologue(node)
+                Dim prologue As BoundStatement = _instrumenterOpt.CreateSelectStatementPrologue(node)
                 If prologue IsNot Nothing Then
                     statementBuilder.Add(prologue)
                 End If
@@ -139,7 +142,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim epilogue As BoundStatement = endSelectResumeLabel
             If instrument Then
                 ' Add End Select sequence point
-                epilogue = _instrumenter.InstrumentSelectStatementEpilogue(node, epilogue)
+                epilogue = _instrumenterOpt.InstrumentSelectStatementEpilogue(node, epilogue)
             End If
 
             If epilogue IsNot Nothing Then
@@ -186,7 +189,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             Dim method = New SynthesizedStringSwitchHashMethod(_emitModule.SourceModule, privateImplClass)
-            privateImplClass.TryAddSynthesizedMethod(method)
+            privateImplClass.TryAddSynthesizedMethod(method.GetCciAdapter())
         End Sub
 
         Private Function RewriteSelectExpression(
@@ -289,14 +292,14 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
                 ' Case Else statement needs a sequence point
                 If instrument Then
-                    rewrittenStatement = _instrumenter.InstrumentCaseElseBlock(curCaseBlock, rewrittenBody)
+                    rewrittenStatement = _instrumenterOpt.InstrumentCaseElseBlock(curCaseBlock, rewrittenBody)
                 Else
                     rewrittenStatement = rewrittenBody
                 End If
             Else
                 Debug.Assert(curCaseBlock.Syntax.Kind = SyntaxKind.CaseBlock)
                 If instrument Then
-                    rewrittenCaseCondition = _instrumenter.InstrumentSelectStatementCaseCondition(selectStatement, rewrittenCaseCondition, _currentMethodOrLambda, lazyConditionalBranchLocal)
+                    rewrittenCaseCondition = _instrumenterOpt.InstrumentSelectStatementCaseCondition(selectStatement, rewrittenCaseCondition, _currentMethodOrLambda, lazyConditionalBranchLocal)
                 End If
 
                 ' EnC: We need to insert a hidden sequence point to handle function remapping in case 
@@ -364,10 +367,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                             Dim relationalCaseClause = DirectCast(caseClause, BoundRelationalCaseClause)
 
                             Debug.Assert(relationalCaseClause.OperatorKind = BinaryOperatorKind.Equals)
-                            Debug.Assert(relationalCaseClause.OperandOpt IsNot Nothing)
+                            Debug.Assert(relationalCaseClause.ValueOpt IsNot Nothing)
                             Debug.Assert(relationalCaseClause.ConditionOpt Is Nothing)
 
-                            constant = relationalCaseClause.OperandOpt.ConstantValueOpt
+                            constant = relationalCaseClause.ValueOpt.ConstantValueOpt
 
                         Case Else
                             Throw ExceptionUtilities.UnexpectedValue(caseClause.Kind)

@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Text.RegularExpressions;
@@ -15,7 +19,7 @@ namespace Microsoft.CodeAnalysis.Scripting.Hosting.UnitTests
         public void AssertMembers(string str, params string[] expected)
         {
             int i = 0;
-            foreach (var line in str.Split(new[] { "\r\n  " }, StringSplitOptions.None))
+            foreach (var line in str.Split(new[] { Environment.NewLine + "  " }, StringSplitOptions.None))
             {
                 if (i == 0)
                 {
@@ -23,7 +27,7 @@ namespace Microsoft.CodeAnalysis.Scripting.Hosting.UnitTests
                 }
                 else if (i == expected.Length - 1)
                 {
-                    Assert.Equal(expected[i] + "\r\n}\r\n", line);
+                    Assert.Equal(expected[i] + Environment.NewLine + "}" + Environment.NewLine, line);
                 }
                 else
                 {
@@ -34,15 +38,6 @@ namespace Microsoft.CodeAnalysis.Scripting.Hosting.UnitTests
             }
 
             Assert.Equal(expected.Length, i);
-        }
-
-        public string FilterDisplayString(string str)
-        {
-            str = Regex.Replace(str, @"Id = \d+", "Id = *");
-            str = Regex.Replace(str, @"Id=\d+", "Id=*");
-            str = Regex.Replace(str, @"Id: \d+", "Id: *");
-
-            return str;
         }
     }
 }

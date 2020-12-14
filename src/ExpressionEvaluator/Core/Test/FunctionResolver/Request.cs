@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
@@ -26,15 +30,17 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator.UnitTests
     {
         private readonly List<Address> _resolvedAddresses;
 
-        internal Request(string moduleName, RequestSignature signature)
+        internal Request(string moduleName, RequestSignature signature, Guid languageId = default(Guid))
         {
             ModuleName = moduleName;
             Signature = signature;
+            LanguageId = languageId;
             _resolvedAddresses = new List<Address>();
         }
 
         internal readonly string ModuleName;
         internal readonly RequestSignature Signature;
+        internal readonly Guid LanguageId;
 
         internal void OnFunctionResolved(Module module, int token, int version, int ilOffset)
         {

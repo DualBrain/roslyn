@@ -1,4 +1,6 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -6,8 +8,10 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection.Metadata;
+using System.Runtime.InteropServices;
 using Microsoft.CodeAnalysis.Debugging;
-using Microsoft.CodeAnalysis.Collections;
+using Microsoft.CodeAnalysis.PooledObjects;
+using Microsoft.CodeAnalysis.Symbols;
 using Microsoft.DiaSymReader;
 using Roslyn.Utilities;
 
@@ -15,7 +19,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 {
     internal partial class MethodDebugInfo<TTypeSymbol, TLocalSymbol>
     {
-        private struct LocalNameAndScope : IEquatable<LocalNameAndScope>
+        private readonly struct LocalNameAndScope : IEquatable<LocalNameAndScope>
         {
             internal readonly string LocalName;
             internal readonly int ScopeStart;
@@ -48,9 +52,14 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             }
         }
 
-        public unsafe static MethodDebugInfo<TTypeSymbol, TLocalSymbol> ReadMethodDebugInfo(
-            ISymUnmanagedReader3 symReader,
-            EESymbolProvider<TTypeSymbol, TLocalSymbol> symbolProviderOpt, // TODO: only null in DTEE case where we looking for default namesapace
+        internal const int S_OK = 0x0;
+        internal const int E_FAIL = unchecked((int)0x80004005);
+        internal const int E_NOTIMPL = unchecked((int)0x80004001);
+        private static readonly IntPtr s_ignoreIErrorInfo = new IntPtr(-1);
+
+        public static unsafe MethodDebugInfo<TTypeSymbol, TLocalSymbol> ReadMethodDebugInfo(
+            ISymUnmanagedReader3? symReader,
+            EESymbolProvider<TTypeSymbol, TLocalSymbol>? symbolProvider, // TODO: only null in DTEE case where we looking for default namesapace
             int methodToken,
             int methodVersion,
             int ilOffset,
@@ -62,22 +71,17 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 return None;
             }
 
-            var symReader4 = symReader as ISymUnmanagedReader4;
-            if (symReader4 != null) // TODO: VB Portable PDBs
+            if (symReader is ISymUnmanagedReader5 symReader5)
             {
-                byte* metadata;
-                int size;
+                int hr = symReader5.GetPortableDebugMetadataByVersion(methodVersion, out byte* metadata, out int size);
+                ThrowExceptionForHR(hr);
 
-                // TODO: version
-                int hr = symReader4.GetPortableDebugMetadata(out metadata, out size);
-                SymUnmanagedReaderExtensions.ThrowExceptionForHR(hr);
-
-                if (metadata != null)
+                if (hr == S_OK)
                 {
                     var mdReader = new MetadataReader(metadata, size);
                     try
                     {
-                        return ReadFromPortable(mdReader, methodToken, ilOffset, symbolProviderOpt, isVisualBasicMethod);
+                        return ReadFromPortable(mdReader, methodToken, ilOffset, symbolProvider, isVisualBasicMethod);
                     }
                     catch (BadImageFormatException)
                     {
@@ -115,11 +119,11 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 }
                 else
                 {
-                    Debug.Assert(symbolProviderOpt != null);
+                    RoslynDebug.AssertNotNull(symbolProvider);
 
                     ReadCSharpNativeImportsInfo(
                         symReader,
-                        symbolProviderOpt,
+                        symbolProvider,
                         methodToken,
                         methodVersion,
                         out importRecordGroups,
@@ -128,13 +132,15 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                     defaultNamespaceName = "";
                 }
 
-                ImmutableArray<HoistedLocalScopeRecord> hoistedLocalScopeRecords = ImmutableArray<HoistedLocalScopeRecord>.Empty;
-                ImmutableDictionary<int, ImmutableArray<bool>> dynamicLocalMap = null;
-                ImmutableDictionary<string, ImmutableArray<bool>> dynamicLocalConstantMap = null;
-                ImmutableDictionary<int, ImmutableArray<string>> tupleLocalMap = null;
-                ImmutableDictionary<LocalNameAndScope, ImmutableArray<string>> tupleLocalConstantMap = null;
+                // VB should read hoisted scope information from local variables:
+                var hoistedLocalScopeRecords = isVisualBasicMethod ? default : ImmutableArray<HoistedLocalScopeRecord>.Empty;
 
-                byte[] customDebugInfo = symReader.GetCustomDebugInfoBytes(methodToken, methodVersion);
+                ImmutableDictionary<int, ImmutableArray<bool>>? dynamicLocalMap = null;
+                ImmutableDictionary<string, ImmutableArray<bool>>? dynamicLocalConstantMap = null;
+                ImmutableDictionary<int, ImmutableArray<string?>>? tupleLocalMap = null;
+                ImmutableDictionary<LocalNameAndScope, ImmutableArray<string?>>? tupleLocalConstantMap = null;
+
+                byte[]? customDebugInfo = GetCustomDebugInfoBytes(symReader, methodToken, methodVersion);
                 if (customDebugInfo != null)
                 {
                     if (!isVisualBasicMethod)
@@ -143,7 +149,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                         if (!customDebugInfoRecord.IsDefault)
                         {
                             hoistedLocalScopeRecords = CustomDebugInfoReader.DecodeStateMachineHoistedLocalScopesRecord(customDebugInfoRecord)
-                                .SelectAsArray(s => new HoistedLocalScopeRecord(s.StartOffset, s.EndOffset - s.StartOffset + 1));
+                                .SelectAsArray(s => new HoistedLocalScopeRecord(s.StartOffset, s.Length));
                         }
 
                         GetCSharpDynamicLocalInfo(
@@ -160,9 +166,9 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 }
 
                 var constantsBuilder = ArrayBuilder<TLocalSymbol>.GetInstance();
-                if (symbolProviderOpt != null) // TODO
+                if (symbolProvider != null) // TODO
                 {
-                    GetConstants(constantsBuilder, symbolProviderOpt, containingScopes, dynamicLocalConstantMap, tupleLocalConstantMap);
+                    GetConstants(constantsBuilder, symbolProvider, containingScopes, dynamicLocalConstantMap, tupleLocalConstantMap);
                 }
 
                 var reuseSpan = GetReuseSpan(allScopes, ilOffset, isVisualBasicMethod);
@@ -190,6 +196,33 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             }
         }
 
+        private static void ThrowExceptionForHR(int hr)
+        {
+            // E_FAIL indicates "no info".
+            // E_NOTIMPL indicates a lack of ISymUnmanagedReader support (in a particular implementation).
+            if (hr < 0 && hr != E_FAIL && hr != E_NOTIMPL)
+            {
+                Marshal.ThrowExceptionForHR(hr, s_ignoreIErrorInfo);
+            }
+        }
+
+        /// <summary>
+        /// Get the blob of binary custom debug info for a given method.
+        /// </summary>
+        private static byte[]? GetCustomDebugInfoBytes(ISymUnmanagedReader3 reader, int methodToken, int methodVersion)
+        {
+            try
+            {
+                return reader.GetCustomDebugInfo(methodToken, methodVersion);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Sometimes the debugger returns the HRESULT for ArgumentOutOfRangeException, rather than E_FAIL,
+                // for methods without custom debug info (https://github.com/dotnet/roslyn/issues/4138).
+                return null;
+            }
+        }
+
         /// <summary>
         /// Get the (unprocessed) import strings for a given method.
         /// </summary>
@@ -213,7 +246,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 return ImmutableArray<string>.Empty;
             }
 
-            ISymUnmanagedScope rootScope = method.GetRootScope();
+            var rootScope = method.GetRootScope();
             if (rootScope == null)
             {
                 Debug.Assert(false, "Expected a root scope.");
@@ -230,7 +263,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
             // As in NamespaceListWrapper::Init, we only consider namespaces in the first
             // child of the root scope.
-            ISymUnmanagedScope firstChildScope = childScopes[0];
+            var firstChildScope = childScopes[0];
 
             var namespaces = firstChildScope.GetNamespaces();
             if (namespaces.Length == 0)
@@ -255,15 +288,15 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
             var importStringGroups = CustomDebugInfoReader.GetCSharpGroupedImportStrings(
                 methodToken,
-                KeyValuePair.Create(reader, methodVersion),
-                getMethodCustomDebugInfo: (token, arg) => arg.Key.GetCustomDebugInfoBytes(token, arg.Value),
+                KeyValuePairUtil.Create(reader, methodVersion),
+                getMethodCustomDebugInfo: (token, arg) => GetCustomDebugInfoBytes(arg.Key, token, arg.Value),
                 getMethodImportStrings: (token, arg) => GetImportStrings(arg.Key, token, arg.Value),
                 externAliasStrings: out externAliasStrings);
 
             Debug.Assert(importStringGroups.IsDefault == externAliasStrings.IsDefault);
 
-            ArrayBuilder<ImmutableArray<ImportRecord>> importRecordGroupBuilder = null;
-            ArrayBuilder<ExternAliasRecord> externAliasRecordBuilder = null;
+            ArrayBuilder<ImmutableArray<ImportRecord>>? importRecordGroupBuilder = null;
+            ArrayBuilder<ExternAliasRecord>? externAliasRecordBuilder = null;
             if (!importStringGroups.IsDefault)
             {
                 importRecordGroupBuilder = ArrayBuilder<ImmutableArray<ImportRecord>>.GetInstance(importStringGroups.Length);
@@ -272,8 +305,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                     var groupBuilder = ArrayBuilder<ImportRecord>.GetInstance(importStringGroup.Length);
                     foreach (var importString in importStringGroup)
                     {
-                        ImportRecord record;
-                        if (TryCreateImportRecordFromCSharpImportString(symbolProvider, importString, out record))
+                        if (TryCreateImportRecordFromCSharpImportString(symbolProvider, importString, out var record))
                         {
                             groupBuilder.Add(record);
                         }
@@ -288,25 +320,20 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 if (!externAliasStrings.IsDefault)
                 {
                     externAliasRecordBuilder = ArrayBuilder<ExternAliasRecord>.GetInstance(externAliasStrings.Length);
-                    foreach (string externAliasString in externAliasStrings)
+                    foreach (var externAliasString in externAliasStrings)
                     {
-                        string alias;
-                        string externAlias;
-                        string target;
-                        ImportTargetKind kind;
-                        if (!CustomDebugInfoReader.TryParseCSharpImportString(externAliasString, out alias, out externAlias, out target, out kind))
+                        if (!CustomDebugInfoReader.TryParseCSharpImportString(externAliasString, out var alias, out var externAlias, out var target, out var kind))
                         {
                             Debug.WriteLine($"Unable to parse extern alias '{externAliasString}'");
                             continue;
                         }
 
                         Debug.Assert(kind == ImportTargetKind.Assembly, "Programmer error: How did a non-assembly get in the extern alias list?");
-                        Debug.Assert(alias != null); // Name of the extern alias.
-                        Debug.Assert(externAlias == null); // Not used.
-                        Debug.Assert(target != null); // Name of the target assembly.
+                        RoslynDebug.Assert(alias != null); // Name of the extern alias.
+                        RoslynDebug.Assert(externAlias == null); // Not used.
+                        RoslynDebug.Assert(target != null); // Name of the target assembly.
 
-                        AssemblyIdentity targetIdentity;
-                        if (!AssemblyIdentity.TryParseDisplayName(target, out targetIdentity))
+                        if (!AssemblyIdentity.TryParseDisplayName(target, out var targetIdentity))
                         {
                             Debug.WriteLine($"Unable to parse target of extern alias '{externAliasString}'");
                             continue;
@@ -323,13 +350,10 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
         private static bool TryCreateImportRecordFromCSharpImportString(EESymbolProvider<TTypeSymbol, TLocalSymbol> symbolProvider, string importString, out ImportRecord record)
         {
-            ImportTargetKind targetKind;
-            string externAlias;
-            string alias;
-            string targetString;
-            if (CustomDebugInfoReader.TryParseCSharpImportString(importString, out alias, out externAlias, out targetString, out targetKind))
+            string? targetString;
+            if (CustomDebugInfoReader.TryParseCSharpImportString(importString, out var alias, out var externAlias, out targetString, out var targetKind))
             {
-                ITypeSymbol type = null;
+                ITypeSymbolInternal? type = null;
                 if (targetKind == ImportTargetKind.Type)
                 {
                     type = symbolProvider.GetTypeSymbolForSerializedType(targetString);
@@ -347,7 +371,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 return true;
             }
 
-            record = default(ImportRecord);
+            record = default;
             return false;
         }
 
@@ -355,8 +379,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
         private static void GetCSharpDynamicLocalInfo(
             byte[] customDebugInfo,
             IEnumerable<ISymUnmanagedScope> scopes,
-            out ImmutableDictionary<int, ImmutableArray<bool>> dynamicLocalMap,
-            out ImmutableDictionary<string, ImmutableArray<bool>> dynamicLocalConstantMap)
+            out ImmutableDictionary<int, ImmutableArray<bool>>? dynamicLocalMap,
+            out ImmutableDictionary<string, ImmutableArray<bool>>? dynamicLocalConstantMap)
         {
             dynamicLocalMap = null;
             dynamicLocalConstantMap = null;
@@ -370,14 +394,14 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             var localKindsByName = PooledDictionary<string, LocalKind>.GetInstance();
             GetLocalKindByName(localKindsByName, scopes);
 
-            ImmutableDictionary<int, ImmutableArray<bool>>.Builder localBuilder = null;
-            ImmutableDictionary<string, ImmutableArray<bool>>.Builder constantBuilder = null;
+            ImmutableDictionary<int, ImmutableArray<bool>>.Builder? localBuilder = null;
+            ImmutableDictionary<string, ImmutableArray<bool>>.Builder? constantBuilder = null;
 
             var dynamicLocals = CustomDebugInfoReader.DecodeDynamicLocalsRecord(record);
             foreach (var dynamicLocal in dynamicLocals)
             {
                 int slot = dynamicLocal.SlotId;
-                var flags = GetFlags(dynamicLocal);
+                var flags = dynamicLocal.Flags;
                 if (slot == 0)
                 {
                     LocalKind kind;
@@ -389,15 +413,14 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                             // Drop locals with ambiguous names.
                             continue;
                         case LocalKind.ConstantName:
-                            constantBuilder = constantBuilder ?? ImmutableDictionary.CreateBuilder<string, ImmutableArray<bool>>();
+                            constantBuilder ??= ImmutableDictionary.CreateBuilder<string, ImmutableArray<bool>>();
                             constantBuilder[name] = flags;
                             continue;
                     }
                 }
-                localBuilder = localBuilder ?? ImmutableDictionary.CreateBuilder<int, ImmutableArray<bool>>();
+                localBuilder ??= ImmutableDictionary.CreateBuilder<int, ImmutableArray<bool>>();
                 localBuilder[slot] = flags;
             }
-
 
             if (localBuilder != null)
             {
@@ -410,18 +433,6 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             }
 
             localKindsByName.Free();
-        }
-
-        private static ImmutableArray<bool> GetFlags(DynamicLocalInfo bucket)
-        {
-            int flagCount = bucket.FlagCount;
-            ulong flags = bucket.Flags;
-            var builder = ArrayBuilder<bool>.GetInstance(flagCount);
-            for (int i = 0; i < flagCount; i++)
-            {
-                builder.Add((flags & (1u << i)) != 0);
-            }
-            return builder.ToImmutableAndFree();
         }
 
         private enum LocalKind { DuplicateName, VariableName, ConstantName }
@@ -456,8 +467,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
         private static void GetTupleElementNamesLocalInfo(
             byte[] customDebugInfo,
-            out ImmutableDictionary<int, ImmutableArray<string>> tupleLocalMap,
-            out ImmutableDictionary<LocalNameAndScope, ImmutableArray<string>> tupleLocalConstantMap)
+            out ImmutableDictionary<int, ImmutableArray<string?>>? tupleLocalMap,
+            out ImmutableDictionary<LocalNameAndScope, ImmutableArray<string?>>? tupleLocalConstantMap)
         {
             tupleLocalMap = null;
             tupleLocalConstantMap = null;
@@ -468,8 +479,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 return;
             }
 
-            ImmutableDictionary<int, ImmutableArray<string>>.Builder localBuilder = null;
-            ImmutableDictionary<LocalNameAndScope, ImmutableArray<string>>.Builder constantBuilder = null;
+            ImmutableDictionary<int, ImmutableArray<string?>>.Builder? localBuilder = null;
+            ImmutableDictionary<LocalNameAndScope, ImmutableArray<string?>>.Builder? constantBuilder = null;
 
             var tuples = CustomDebugInfoReader.DecodeTupleElementNamesRecord(record);
             foreach (var tuple in tuples)
@@ -478,13 +489,13 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 var elementNames = tuple.ElementNames;
                 if (slotIndex < 0)
                 {
-                    constantBuilder = constantBuilder ?? ImmutableDictionary.CreateBuilder<LocalNameAndScope, ImmutableArray<string>>();
+                    constantBuilder ??= ImmutableDictionary.CreateBuilder<LocalNameAndScope, ImmutableArray<string?>>();
                     var localAndScope = new LocalNameAndScope(tuple.LocalName, tuple.ScopeStart, tuple.ScopeEnd);
                     constantBuilder[localAndScope] = elementNames;
                 }
                 else
                 {
-                    localBuilder = localBuilder ?? ImmutableDictionary.CreateBuilder<int, ImmutableArray<string>>();
+                    localBuilder ??= ImmutableDictionary.CreateBuilder<int, ImmutableArray<string?>>();
                     localBuilder[slotIndex] = elementNames;
                 }
             }
@@ -510,8 +521,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             importRecordGroups = ImmutableArray<ImmutableArray<ImportRecord>>.Empty;
 
             var importStrings = CustomDebugInfoReader.GetVisualBasicImportStrings(
-                methodToken,  
-                KeyValuePair.Create(reader, methodVersion),
+                methodToken,
+                KeyValuePairUtil.Create(reader, methodVersion),
                 (token, arg) => GetImportStrings(arg.Key, token, arg.Value));
 
             if (importStrings.IsDefault)
@@ -520,22 +531,20 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 return;
             }
 
-            defaultNamespaceName = null;
+            string? lazyDefaultNamespaceName = null;
             var projectLevelImportRecords = ArrayBuilder<ImportRecord>.GetInstance();
             var fileLevelImportRecords = ArrayBuilder<ImportRecord>.GetInstance();
 
-            foreach (string importString in importStrings)
+            foreach (var importString in importStrings)
             {
-                Debug.Assert(importString != null);
+                RoslynDebug.AssertNotNull(importString);
 
                 if (importString.Length > 0 && importString[0] == '*')
                 {
-                    string alias = null;
-                    string target = null;
-                    ImportTargetKind kind = 0;
-                    VBImportScopeKind scope = 0;
+                    string? alias = null;
+                    string? target = null;
 
-                    if (!CustomDebugInfoReader.TryParseVisualBasicImportString(importString, out alias, out target, out kind, out scope))
+                    if (!CustomDebugInfoReader.TryParseVisualBasicImportString(importString, out alias, out target, out var kind, out var scope))
                     {
                         Debug.WriteLine($"Unable to parse import string '{importString}'");
                         continue;
@@ -551,9 +560,9 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
                     // We only expect to see one of these, but it looks like ProcedureContext::LoadImportsAndDefaultNamespaceNormal
                     // implicitly uses the last one if there are multiple.
-                    Debug.Assert(defaultNamespaceName == null);
+                    Debug.Assert(lazyDefaultNamespaceName == null);
 
-                    defaultNamespaceName = target;
+                    lazyDefaultNamespaceName = target;
                 }
                 else
                 {
@@ -583,7 +592,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 fileLevelImportRecords.ToImmutableAndFree(),
                 projectLevelImportRecords.ToImmutableAndFree());
 
-            defaultNamespaceName = defaultNamespaceName ?? "";
+            defaultNamespaceName = lazyDefaultNamespaceName ?? "";
         }
 
         private static bool TryCreateImportRecordFromVisualBasicImportString(string importString, out ImportRecord record, out VBImportScopeKind scope)
@@ -604,7 +613,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 return true;
             }
 
-            record = default(ImportRecord);
+            record = default;
             return false;
         }
 
@@ -620,8 +629,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             ArrayBuilder<TLocalSymbol> builder,
             EESymbolProvider<TTypeSymbol, TLocalSymbol> symbolProvider,
             ArrayBuilder<ISymUnmanagedScope> scopes,
-            ImmutableDictionary<string, ImmutableArray<bool>> dynamicLocalConstantMapOpt,
-            ImmutableDictionary<LocalNameAndScope, ImmutableArray<string>> tupleLocalConstantMapOpt)
+            ImmutableDictionary<string, ImmutableArray<bool>>? dynamicLocalConstantMap,
+            ImmutableDictionary<LocalNameAndScope, ImmutableArray<string?>>? tupleLocalConstantMap)
         {
             foreach (var scope in scopes)
             {
@@ -656,17 +665,17 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                     }
 
                     var dynamicFlags = default(ImmutableArray<bool>);
-                    if (dynamicLocalConstantMapOpt != null)
+                    if (dynamicLocalConstantMap != null)
                     {
-                        dynamicLocalConstantMapOpt.TryGetValue(name, out dynamicFlags);
+                        dynamicLocalConstantMap.TryGetValue(name, out dynamicFlags);
                     }
 
-                    var tupleElementNames = default(ImmutableArray<string>);
-                    if (tupleLocalConstantMapOpt != null)
+                    var tupleElementNames = default(ImmutableArray<string?>);
+                    if (tupleLocalConstantMap != null)
                     {
                         int scopeStart = scope.GetStartOffset();
                         int scopeEnd = scope.GetEndOffset();
-                        tupleLocalConstantMapOpt.TryGetValue(new LocalNameAndScope(name, scopeStart, scopeEnd), out tupleElementNames);
+                        tupleLocalConstantMap.TryGetValue(new LocalNameAndScope(name, scopeStart, scopeEnd), out tupleElementNames);
                     }
 
                     builder.Add(symbolProvider.GetLocalConstant(name, type, constantValue, dynamicFlags, tupleElementNames));
@@ -685,8 +694,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             EESymbolProvider<TTypeSymbol, TLocalSymbol> symbolProvider,
             ImmutableArray<string> names,
             ImmutableArray<LocalInfo<TTypeSymbol>> localInfo,
-            ImmutableDictionary<int, ImmutableArray<bool>> dynamicLocalMapOpt,
-            ImmutableDictionary<int, ImmutableArray<string>> tupleLocalConstantMapOpt)
+            ImmutableDictionary<int, ImmutableArray<bool>>? dynamicLocalMap,
+            ImmutableDictionary<int, ImmutableArray<string?>>? tupleLocalConstantMap)
         {
             if (localInfo.Length == 0)
             {
@@ -703,13 +712,13 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
             for (int i = 0; i < localInfo.Length; i++)
             {
-                string name = (i < names.Length) ? names[i] : null;
+                string? name = (i < names.Length) ? names[i] : null;
 
                 var dynamicFlags = default(ImmutableArray<bool>);
-                dynamicLocalMapOpt?.TryGetValue(i, out dynamicFlags);
+                dynamicLocalMap?.TryGetValue(i, out dynamicFlags);
 
-                var tupleElementNames = default(ImmutableArray<string>);
-                tupleLocalConstantMapOpt?.TryGetValue(i, out tupleElementNames);
+                var tupleElementNames = default(ImmutableArray<string?>);
+                tupleLocalConstantMap?.TryGetValue(i, out tupleElementNames);
 
                 builder.Add(symbolProvider.GetLocalVariable(name, i, localInfo[i], dynamicFlags, tupleElementNames));
             }

@@ -1,49 +1,48 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System;
 using Microsoft.CodeAnalysis.Options;
 
 namespace Microsoft.CodeAnalysis.Formatting
 {
-    public static class FormattingOptions
+    /// <inheritdoc cref="FormattingOptions2"/>
+    public static partial class FormattingOptions
     {
-        public static PerLanguageOption<bool> UseTabs { get; } = new PerLanguageOption<bool>(nameof(FormattingOptions), nameof(UseTabs), defaultValue: false,
-            storageLocations: new EditorConfigStorageLocation("indent_style", s => s == "tab"));
+        /// <inheritdoc cref="FormattingOptions2.UseTabs"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        public static PerLanguageOption<bool> UseTabs { get; } = ((PerLanguageOption<bool>)FormattingOptions2.UseTabs)!;
 
-        // This is also serialized by the Visual Studio-specific LanguageSettingsPersister
-        public static PerLanguageOption<int> TabSize { get; } = new PerLanguageOption<int>(nameof(FormattingOptions), nameof(TabSize), defaultValue: 4,
-            storageLocations: new EditorConfigStorageLocation("tab_width"));
+        /// <inheritdoc cref="FormattingOptions2.TabSize"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        public static PerLanguageOption<int> TabSize { get; } = ((PerLanguageOption<int>)FormattingOptions2.TabSize)!;
 
-        // This is also serialized by the Visual Studio-specific LanguageSettingsPersister
-        public static PerLanguageOption<int> IndentationSize { get; } = new PerLanguageOption<int>(nameof(FormattingOptions), nameof(IndentationSize), defaultValue: 4,
-            storageLocations: new EditorConfigStorageLocation("indent_size"));
+        /// <inheritdoc cref="FormattingOptions2.IndentationSize"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        public static PerLanguageOption<int> IndentationSize { get; } = ((PerLanguageOption<int>)FormattingOptions2.IndentationSize)!;
 
-        // This is also serialized by the Visual Studio-specific LanguageSettingsPersister
-        public static PerLanguageOption<IndentStyle> SmartIndent { get; } = new PerLanguageOption<IndentStyle>(nameof(FormattingOptions), nameof(SmartIndent), defaultValue: IndentStyle.Smart);
+        /// <inheritdoc cref="FormattingOptions2.SmartIndent"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        public static PerLanguageOption<IndentStyle> SmartIndent { get; } = ((PerLanguageOption<IndentStyle>)FormattingOptions2.SmartIndent)!;
 
-        public static PerLanguageOption<string> NewLine { get; } = new PerLanguageOption<string>(nameof(FormattingOptions), nameof(NewLine), defaultValue: "\r\n",
-            storageLocations: new EditorConfigStorageLocation("end_of_line", ParseEditorConfigEndOfLine));
+        /// <inheritdoc cref="FormattingOptions2.NewLine"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        public static PerLanguageOption<string> NewLine { get; } = ((PerLanguageOption<string>)FormattingOptions2.NewLine)!;
 
-        private static object ParseEditorConfigEndOfLine(string endOfLineValue)
-        {
-            switch (endOfLineValue)
-            {
-                case "lf": return "\n";
-                case "cr": return "\r";
-                case "crlf": return "\r\n";
-                default: return NewLine.DefaultValue;
-            }
-        }
+        /// <inheritdoc cref="FormattingOptions2.InsertFinalNewLine"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        internal static Option<bool> InsertFinalNewLine { get; } = ((Option<bool>)FormattingOptions2.InsertFinalNewLine)!;
 
-        internal static PerLanguageOption<bool> DebugMode { get; } = new PerLanguageOption<bool>(nameof(FormattingOptions), nameof(DebugMode), defaultValue: false);
+        /// <inheritdoc cref="FormattingOptions2.PreferredWrappingColumn"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        internal static Option<int> PreferredWrappingColumn { get; } = ((Option<int>)FormattingOptions2.PreferredWrappingColumn)!;
 
-        internal static Option<bool> AllowDisjointSpanMerging { get; } = new Option<bool>(nameof(FormattingOptions), nameof(AllowDisjointSpanMerging), defaultValue: false);
+        /// <inheritdoc cref="FormattingOptions2.AllowDisjointSpanMerging"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        internal static Option<bool> AllowDisjointSpanMerging { get; } = ((Option<bool>)FormattingOptions2.AllowDisjointSpanMerging)!;
 
-        public enum IndentStyle
-        {
-            None = 0,
-            Block = 1,
-            Smart = 2
-        }
+        /// <inheritdoc cref="FormattingOptions2.AutoFormattingOnReturn"/>
+        // Suppression due to https://github.com/dotnet/roslyn/issues/42614
+        internal static readonly PerLanguageOption<bool> AutoFormattingOnReturn = ((PerLanguageOption<bool>)FormattingOptions2.AutoFormattingOnReturn)!;
     }
 }

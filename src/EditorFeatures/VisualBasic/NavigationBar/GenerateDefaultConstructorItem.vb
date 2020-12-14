@@ -1,10 +1,14 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
+Imports System.Collections.Immutable
 Imports System.Threading
 Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis.CodeGeneration
 Imports Microsoft.CodeAnalysis.Editing
 Imports Microsoft.CodeAnalysis.Editor.VisualBasic.Utilities
+Imports Microsoft.CodeAnalysis.PooledObjects
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
     Friend Class GenerateDefaultConstructorItem
@@ -27,7 +31,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                 Return Nothing
             End If
 
-            Dim statements As New List(Of SyntaxNode)
+            Dim statements As New ArrayBuilder(Of SyntaxNode)
 
             If destinationType.IsDesignerGeneratedTypeWithInitializeComponent(compilation) Then
                 Dim statement = SyntaxFactory.ExpressionStatement(SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName("InitializeComponent"), SyntaxFactory.ArgumentList()))
@@ -45,8 +49,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                 accessibility:=Accessibility.Public,
                 modifiers:=New DeclarationModifiers(),
                 typeName:=destinationType.Name,
-                parameters:=SpecializedCollections.EmptyList(Of IParameterSymbol)(),
-                statements:=statements)
+                parameters:=ImmutableArray(Of IParameterSymbol).Empty,
+                statements:=statements.ToImmutableAndFree())
             methodSymbol = GeneratedSymbolAnnotation.AddAnnotationToSymbol(methodSymbol)
 
             Return Await CodeGenerator.AddMethodDeclarationAsync(document.Project.Solution,

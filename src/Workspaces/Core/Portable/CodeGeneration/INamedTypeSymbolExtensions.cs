@@ -1,6 +1,7 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-using System.Linq;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 
 namespace Microsoft.CodeAnalysis.CodeGeneration
@@ -9,12 +10,13 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
     {
         public static CodeGenerationAbstractNamedTypeSymbol ToCodeGenerationSymbol(this INamedTypeSymbol namedType)
         {
-            if (namedType is CodeGenerationAbstractNamedTypeSymbol)
+            if (namedType is CodeGenerationAbstractNamedTypeSymbol typeSymbol)
             {
-                return (CodeGenerationAbstractNamedTypeSymbol)namedType;
+                return typeSymbol;
             }
 
             return new CodeGenerationNamedTypeSymbol(
+                namedType.ContainingAssembly,
                 namedType.ContainingType,
                 namedType.GetAttributes(),
                 namedType.DeclaredAccessibility,
@@ -25,8 +27,9 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
                 namedType.BaseType,
                 namedType.Interfaces,
                 namedType.SpecialType,
-                namedType.GetMembers().Where(s => !(s is INamedTypeSymbol)).ToList(),
-                namedType.GetTypeMembers().Select(t => t.ToCodeGenerationSymbol()).ToList(),
+                namedType.NullableAnnotation,
+                namedType.GetMembers().WhereAsArray(s => !(s is INamedTypeSymbol)),
+                namedType.GetTypeMembers().SelectAsArray(t => t.ToCodeGenerationSymbol()),
                 namedType.EnumUnderlyingType);
         }
     }

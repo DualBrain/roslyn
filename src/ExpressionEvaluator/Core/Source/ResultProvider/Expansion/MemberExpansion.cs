@@ -1,6 +1,11 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Microsoft.VisualStudio.Debugger.Clr;
@@ -26,22 +31,25 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             DkmClrValue value,
             ExpansionFlags flags,
             Predicate<MemberInfo> predicate,
-            ResultProvider resultProvider)
+            ResultProvider resultProvider,
+            bool isProxyType,
+            bool supportsFavorites)
         {
             // For members of type DynamicProperty (part of Dynamic View expansion), we want
             // to expand the underlying value (not the members of the DynamicProperty type).
             var type = value.Type;
-            var isDynamicProperty = type.GetLmrType().IsDynamicProperty();
+            var runtimeType = type.GetLmrType();
+            var isDynamicProperty = runtimeType.IsDynamicProperty();
             if (isDynamicProperty)
             {
                 Debug.Assert(!value.IsNull);
                 value = value.GetFieldValue("value", inspectionContext);
             }
 
-            var runtimeType = type.GetLmrType();
-            // Primitives, enums, function pointers, and null values with a declared type that is an interface have no visible members.
+            // Primitives, enums, function pointers, IntPtr, UIntPtr and null values with a declared type that is an interface have no visible members.
             Debug.Assert(!runtimeType.IsInterface || value.IsNull);
-            if (resultProvider.IsPrimitiveType(runtimeType) || runtimeType.IsEnum || runtimeType.IsInterface || runtimeType.IsFunctionPointer())
+            if (resultProvider.IsPrimitiveType(runtimeType) || runtimeType.IsEnum || runtimeType.IsInterface || runtimeType.IsFunctionPointer() ||
+                runtimeType.IsIntPtr() || runtimeType.IsUIntPtr())
             {
                 return null;
             }
@@ -57,26 +65,30 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
             var expansions = ArrayBuilder<Expansion>.GetInstance();
 
+            // Expand members. TODO: Ideally, this would be done lazily (https://github.com/dotnet/roslyn/issues/32800)
             // From the members, collect the fields and properties,
             // separated into static and instance members.
             var staticMembers = ArrayBuilder<MemberAndDeclarationInfo>.GetInstance();
             var instanceMembers = ArrayBuilder<MemberAndDeclarationInfo>.GetInstance();
             var appDomain = value.Type.AppDomain;
 
-            // Expand members. (Ideally, this should be done lazily.)
             var allMembers = ArrayBuilder<MemberAndDeclarationInfo>.GetInstance();
             var includeInherited = (flags & ExpansionFlags.IncludeBaseMembers) == ExpansionFlags.IncludeBaseMembers;
             var hideNonPublic = (inspectionContext.EvaluationFlags & DkmEvaluationFlags.HideNonPublicMembers) == DkmEvaluationFlags.HideNonPublicMembers;
-            runtimeType.AppendTypeMembers(allMembers, predicate, declaredTypeAndInfo.Type, appDomain, includeInherited, hideNonPublic);
+            var includeCompilerGenerated = (inspectionContext.EvaluationFlags & DkmEvaluationFlags.ShowValueRaw) == DkmEvaluationFlags.ShowValueRaw;
+            var favoritesInfo = supportsFavorites ? type.GetFavorites() : null;
+            runtimeType.AppendTypeMembers(allMembers, predicate, declaredTypeAndInfo.Type, appDomain, includeInherited, hideNonPublic, isProxyType, includeCompilerGenerated, supportsFavorites, favoritesInfo);
+
+            var favoritesMembersByName = new Dictionary<string, MemberAndDeclarationInfo>();
 
             foreach (var member in allMembers)
             {
-                var name = member.Name;
-                if (name.IsCompilerGenerated())
+                // Favorites are currently never static
+                if (member.IsFavorite && !value.IsNull)
                 {
-                    continue;
+                    favoritesMembersByName.Add(member.Name, member);
                 }
-                if (member.IsStatic)
+                else if (member.IsStatic)
                 {
                     staticMembers.Add(member);
                 }
@@ -88,12 +100,48 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
             allMembers.Free();
 
+            // Favorites members.
+            Expansion favoritesExpansion = null;
+            if (favoritesMembersByName.Count > 0)
+            {
+                var favoritesMembers = ArrayBuilder<MemberAndDeclarationInfo>.GetInstance();
+
+                foreach (string name in favoritesInfo.Favorites)
+                {
+                    if (favoritesMembersByName.TryGetValue(name, out var memberAndDeclarationInfo))
+                    {
+                        favoritesMembers.Add(memberAndDeclarationInfo);
+                    }
+                }
+
+                if (favoritesMembers.Count > 0)
+                {
+                    favoritesExpansion = new MemberExpansion(favoritesMembers.ToArrayAndFree(), customTypeInfoMap, containsFavorites: true);
+                }
+            }
+
+            if (favoritesExpansion != null)
+            {
+                expansions.Add(favoritesExpansion);
+
+                // Check if we are only expanding favorites.
+                if ((inspectionContext.EvaluationFlags & DkmEvaluationFlags.FilterToFavorites) == DkmEvaluationFlags.FilterToFavorites)
+                {
+                    instanceMembers.Free();
+                    staticMembers.Free();
+                    expansions.Free();
+
+                    return favoritesExpansion;
+                }
+            }
+
             // Public and non-public instance members.
             Expansion publicInstanceExpansion;
             Expansion nonPublicInstanceExpansion;
             GetPublicAndNonPublicMembers(
                 instanceMembers,
                 customTypeInfoMap,
+                isProxyType,
                 out publicInstanceExpansion,
                 out nonPublicInstanceExpansion);
 
@@ -103,6 +151,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             GetPublicAndNonPublicMembers(
                 staticMembers,
                 customTypeInfoMap,
+                isProxyType,
                 out publicStaticExpansion,
                 out nonPublicStaticExpansion);
 
@@ -166,6 +215,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
         private static void GetPublicAndNonPublicMembers(
             ArrayBuilder<MemberAndDeclarationInfo> allMembers,
             CustomTypeInfoTypeArgumentMap customTypeInfoMap,
+            bool isProxyType,
             out Expansion publicExpansion,
             out Expansion nonPublicExpansion)
         {
@@ -192,7 +242,9 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                     }
                 }
 
-                if (member.HideNonPublic && !member.IsPublic)
+                // The native EE shows proxy type members as public members if they have a
+                // DebuggerBrowsable attribute of any value. Match that behaviour here.
+                if (member.HideNonPublic && !member.IsPublic && (!isProxyType || !member.BrowsableState.HasValue))
                 {
                     nonPublicMembers.Add(member);
                 }
@@ -220,8 +272,9 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
         private readonly MemberAndDeclarationInfo[] _members;
         private readonly CustomTypeInfoTypeArgumentMap _customTypeInfoMap;
+        private readonly bool _containsFavorites;
 
-        private MemberExpansion(MemberAndDeclarationInfo[] members, CustomTypeInfoTypeArgumentMap customTypeInfoMap)
+        private MemberExpansion(MemberAndDeclarationInfo[] members, CustomTypeInfoTypeArgumentMap customTypeInfoMap, bool containsFavorites = false)
         {
             Debug.Assert(members != null);
             Debug.Assert(members.Length > 0);
@@ -229,7 +282,10 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
             _members = members;
             _customTypeInfoMap = customTypeInfoMap;
+            _containsFavorites = containsFavorites;
         }
+
+        internal override bool ContainsFavorites => _containsFavorites;
 
         internal override void GetRows(
             ResultProvider resultProvider,
@@ -271,7 +327,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 memberValue,
                 parent,
                 customTypeInfoMap,
-                ExpansionFlags.All);
+                ExpansionFlags.All,
+                supportsFavorites: true);
         }
 
         /// <summary>
@@ -411,7 +468,8 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             DkmClrValue memberValue,
             EvalResultDataItem parent,
             CustomTypeInfoTypeArgumentMap customTypeInfoMap,
-            ExpansionFlags flags)
+            ExpansionFlags flags,
+            bool supportsFavorites)
         {
             var fullNameProvider = resultProvider.FullNameProvider;
             var declaredType = member.Type;
@@ -454,7 +512,10 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 formatSpecifiers: Formatter.NoFormatSpecifiers,
                 category: DkmEvaluationResultCategory.Other,
                 flags: memberValue.EvalFlags,
-                evalFlags: DkmEvaluationFlags.None);
+                evalFlags: DkmEvaluationFlags.None,
+                canFavorite: member.CanFavorite,
+                isFavorite: member.IsFavorite,
+                supportsFavorites: supportsFavorites);
         }
 
         private static string MakeFullName(

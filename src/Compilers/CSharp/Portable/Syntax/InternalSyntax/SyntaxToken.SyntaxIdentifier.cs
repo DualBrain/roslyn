@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using Roslyn.Utilities;
@@ -9,6 +13,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
     {
         internal class SyntaxIdentifier : SyntaxToken
         {
+            static SyntaxIdentifier()
+            {
+                ObjectBinder.RegisterTypeReader(typeof(SyntaxIdentifier), r => new SyntaxIdentifier(r));
+            }
+
             protected readonly string TextField;
 
             internal SyntaxIdentifier(string text)
@@ -34,11 +43,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             {
                 base.WriteTo(writer);
                 writer.WriteString(this.TextField);
-            }
-
-            internal override Func<ObjectReader, object> GetReader()
-            {
-                return r => new SyntaxIdentifier(r);
             }
 
             public override string Text

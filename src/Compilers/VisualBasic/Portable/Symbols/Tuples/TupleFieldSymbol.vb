@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Globalization
@@ -13,7 +15,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
     Friend Class TupleFieldSymbol
         Inherits WrappedFieldSymbol
 
-        Protected _containingTuple As TupleTypeSymbol
+        Protected ReadOnly _containingTuple As TupleTypeSymbol
 
         ''' <summary>
         ''' If this field represents a tuple element with index X, the field contains
@@ -21,7 +23,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         '''  2X + 1  if this field represents a Friendly-named element
         ''' Otherwise, (-1 - [index in members array]);
         ''' </summary>
-        Private _tupleElementIndex As Integer
+        Private ReadOnly _tupleElementIndex As Integer
 
         Public Overrides ReadOnly Property IsTupleField As Boolean
             Get
@@ -112,7 +114,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Public Overloads Function Equals(other As TupleFieldSymbol) As Boolean
             Return other IsNot Nothing AndAlso
                 _tupleElementIndex = other._tupleElementIndex AndAlso
-                _containingTuple = other._containingTuple
+                TypeSymbol.Equals(_containingTuple, other._containingTuple, TypeCompareKind.ConsiderEverything)
         End Function
     End Class
 
@@ -123,7 +125,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
     Friend Class TupleElementFieldSymbol
         Inherits TupleFieldSymbol
 
-        Private _locations As ImmutableArray(Of Location)
+        Private ReadOnly _locations As ImmutableArray(Of Location)
 
         ' default tuple elements like Item1 Or Item20 could be provided by the user or
         ' otherwise implicitly declared by compiler
@@ -209,11 +211,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
     Friend NotInheritable Class TupleVirtualElementFieldSymbol
         Inherits TupleElementFieldSymbol
 
-        Private _name As String
+        Private ReadOnly _name As String
+        Private ReadOnly _cannotUse As Boolean ' With LanguageVersion 15, we will produce named elements that should not be used
 
         Public Sub New(container As TupleTypeSymbol,
                        underlyingField As FieldSymbol,
                        name As String,
+                       cannotUse As Boolean,
                        tupleElementOrdinal As Integer,
                        location As Location,
                        isImplicitlyDeclared As Boolean,
@@ -226,7 +230,17 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                                 "fields that map directly to underlying should not be represented by " + NameOf(TupleVirtualElementFieldSymbol))
 
             Me._name = name
+            Me._cannotUse = cannotUse
         End Sub
+
+        Friend Overrides Function GetUseSiteErrorInfo() As DiagnosticInfo
+            If _cannotUse Then
+                Return ErrorFactory.ErrorInfo(ERRID.ERR_TupleInferredNamesNotAvailable, _name,
+                                              New VisualBasicRequiredLanguageVersion(LanguageVersion.VisualBasic15_3))
+            End If
+
+            Return MyBase.GetUseSiteErrorInfo()
+        End Function
 
         Public Overrides ReadOnly Property Name As String
             Get

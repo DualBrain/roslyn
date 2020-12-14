@@ -1,8 +1,11 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection.Metadata;
+using Microsoft.CodeAnalysis.Symbols;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CodeGen
@@ -15,9 +18,9 @@ namespace Microsoft.CodeAnalysis.CodeGen
         // it may be better if local does not have a name as will restrict reuse of locals when we do it.
 
         //Local symbol, currently used by edit and continue and for the location.
-        private readonly ILocalSymbol _symbolOpt;
+        private readonly ILocalSymbolInternal? _symbolOpt;
 
-        private readonly string _nameOpt;
+        private readonly string? _nameOpt;
 
         //data type associated with the local signature slot.
         private readonly Cci.ITypeReference _type;
@@ -38,9 +41,9 @@ namespace Microsoft.CodeAnalysis.CodeGen
         private readonly LocalVariableAttributes _pdbAttributes;
 
         //Gives the synthesized dynamic attributes of the local definition
-        private readonly ImmutableArray<TypedConstant> _dynamicTransformFlags;
+        private readonly ImmutableArray<bool> _dynamicTransformFlags;
 
-        private readonly ImmutableArray<TypedConstant> _tupleElementNames;
+        private readonly ImmutableArray<string> _tupleElementNames;
 
         /// <summary>
         /// Creates a new LocalDefinition.
@@ -56,16 +59,16 @@ namespace Microsoft.CodeAnalysis.CodeGen
         /// <param name="dynamicTransformFlags">The synthesized dynamic attributes of the local.</param>
         /// <param name="tupleElementNames">Tuple element names of the local.</param>
         public LocalDefinition(
-            ILocalSymbol symbolOpt,
-            string nameOpt,
+            ILocalSymbolInternal? symbolOpt,
+            string? nameOpt,
             Cci.ITypeReference type,
             int slot,
             SynthesizedLocalKind synthesizedKind,
             LocalDebugId id,
             LocalVariableAttributes pdbAttributes,
             LocalSlotConstraints constraints,
-            ImmutableArray<TypedConstant> dynamicTransformFlags,
-            ImmutableArray<TypedConstant> tupleElementNames)
+            ImmutableArray<bool> dynamicTransformFlags,
+            ImmutableArray<string> tupleElementNames)
         {
             _symbolOpt = symbolOpt;
             _nameOpt = nameOpt;
@@ -81,16 +84,15 @@ namespace Microsoft.CodeAnalysis.CodeGen
         internal string GetDebuggerDisplay()
             => $"{_slot}: {_nameOpt ?? "<unnamed>"} ({_type})";
 
-        public ILocalSymbol SymbolOpt => _symbolOpt;
+        public ILocalSymbolInternal? SymbolOpt => _symbolOpt;
 
         public Location Location
         {
             get
             {
-                ISymbol symbol = _symbolOpt as ISymbol;
-                if (symbol != null)
+                if (_symbolOpt != null)
                 {
-                    ImmutableArray<Location> locations = symbol.Locations;
+                    ImmutableArray<Location> locations = _symbolOpt.Locations;
                     if (!locations.IsDefaultOrEmpty)
                     {
                         return locations[0];
@@ -102,7 +104,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public int SlotIndex => _slot;
 
-        public Cci.IMetadataConstant CompileTimeValue
+        public MetadataConstant CompileTimeValue
         {
             get { throw ExceptionUtilities.Unreachable; }
         }
@@ -127,15 +129,15 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public LocalVariableAttributes PdbAttributes => _pdbAttributes;
 
-        public ImmutableArray<TypedConstant> DynamicTransformFlags => _dynamicTransformFlags;
+        public ImmutableArray<bool> DynamicTransformFlags => _dynamicTransformFlags;
 
-        public ImmutableArray<TypedConstant> TupleElementNames => _tupleElementNames;
+        public ImmutableArray<string> TupleElementNames => _tupleElementNames;
 
         public Cci.ITypeReference Type => _type;
 
-        public string Name => _nameOpt;
+        public string? Name => _nameOpt;
 
-        public byte[] Signature => null;
+        public byte[]? Signature => null;
 
         public LocalSlotDebugInfo SlotInfo => _slotInfo;
     }

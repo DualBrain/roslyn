@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.IO;
 using Microsoft.CodeAnalysis.Emit;
@@ -7,6 +11,8 @@ using Xunit;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
+using Microsoft.CodeAnalysis.Test.Extensions;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using System.Linq;
 
 namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Semantics
@@ -27,7 +33,7 @@ class Test
         yield break;
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilation(text);
             comp.VerifyDiagnostics();
         }
 
@@ -44,7 +50,7 @@ class Test
         yield return 1;
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilation(text);
             comp.VerifyDiagnostics();
         }
 
@@ -62,7 +68,7 @@ class Test
         yield break;
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilation(text);
             comp.VerifyDiagnostics(
                 // (7,22): error CS0266: Cannot implicitly convert type 'double' to 'int'. An explicit conversion exists (are you missing a cast?)
                 //         yield return 1.1;
@@ -85,7 +91,7 @@ class Test
         yield break;
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilation(text);
             comp.VerifyDiagnostics(
                 // (8,44): error CS1621: The yield statement cannot be used inside an anonymous method or lambda expression
                 //         Func<IEnumerable<int>> i = () => { yield break; };
@@ -123,7 +129,7 @@ class Test
     {
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilation(text);
 
             EmitResult emitResult;
             using (var output = new MemoryStream())
@@ -293,7 +299,7 @@ namespace RoslynYield
         [WorkItem(5390, "https://github.com/dotnet/roslyn/issues/5390")]
         public void TopLevelYieldReturn()
         {
-            // The imcomplete statement is intended
+            // The incomplete statement is intended
             var text = "yield return int.";
             var comp = CreateCompilationWithMscorlib45(text, parseOptions: TestOptions.Script);
             comp.VerifyDiagnostics(
@@ -364,7 +370,7 @@ class Base
         }
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text, options: TestOptions.DebugDll);
+            var comp = CreateCompilation(text, options: TestOptions.DebugDll);
             comp.VerifyEmitDiagnostics(); // without the fix for bug 11649, the compilation would fail emitting
             CompileAndVerify(comp);
         }
@@ -408,6 +414,7 @@ class Base
             comp.Compilation.VerifyDiagnostics();
         }
 
+        [CompilerTrait(CompilerFeature.IOperation)]
         [Fact]
         [WorkItem(261047, "https://devdiv.visualstudio.com/DevDiv/_workitems?id=261047&_a=edit")]
         public void MissingExpression()
@@ -422,12 +429,99 @@ class Test
         yield return;
     }
 }";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilation(text);
             comp.VerifyDiagnostics(
                 // (7,15): error CS1627: Expression expected after yield return
                 //         yield return;
                 Diagnostic(ErrorCode.ERR_EmptyYield, "return").WithLocation(7, 15)
                 );
+
+            var tree = comp.SyntaxTrees.Single();
+            var node = tree.GetRoot().DescendantNodes().OfType<YieldStatementSyntax>().First();
+
+            Assert.Equal("yield return;", node.ToString());
+
+            comp.VerifyOperationTree(node, expectedOperationTree:
+@"
+IReturnOperation (OperationKind.YieldReturn, Type: null, IsInvalid) (Syntax: 'yield return;')
+  ReturnedValue: 
+    IInvalidOperation (OperationKind.Invalid, Type: ?, IsInvalid, IsImplicit) (Syntax: 'yield return;')
+      Children(0)
+");
+        }
+
+        [Fact]
+        [WorkItem(3825, "https://github.com/dotnet/roslyn/issues/3825")]
+        public void ObjectCreationExpressionSyntax_01()
+        {
+            var text = @"
+using System.Collections.Generic;
+
+class Test<TKey, TValue>
+{
+    public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator(KeyValuePair<TKey, TValue> kvp)
+    {
+        yield return new KeyValuePair<TKey, TValue>(kvp.Key, kvp.Value);
+    }
+}";
+            var comp = CreateCompilationWithMscorlib45(text);
+            comp.VerifyDiagnostics();
+
+            var tree = comp.SyntaxTrees[0];
+            var node = tree.GetRoot().DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Single();
+
+            Assert.Equal("new KeyValuePair<TKey, TValue>(kvp.Key, kvp.Value)", node.ToString());
+
+            var model = comp.GetSemanticModel(tree);
+            var typeInfo = model.GetTypeInfo(node);
+            var symbolInfo = model.GetSymbolInfo(node);
+
+            Assert.Null(model.GetDeclaredSymbol(node));
+            Assert.Equal("System.Collections.Generic.KeyValuePair<TKey, TValue>", typeInfo.Type.ToTestDisplayString());
+            Assert.Equal(typeInfo.Type, typeInfo.ConvertedType);
+            Assert.True(model.GetConversion(node).IsIdentity);
+
+            Assert.Equal("System.Collections.Generic.KeyValuePair<TKey, TValue>..ctor(TKey key, TValue value)", symbolInfo.Symbol.ToTestDisplayString());
+        }
+
+        [Fact]
+        [WorkItem(3825, "https://github.com/dotnet/roslyn/issues/3825")]
+        public void ObjectCreationExpressionSyntax_02()
+        {
+            var text = @"
+using System.Collections.Generic;
+
+class Test<TKey, TValue>
+{
+    public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator(KeyValuePair<TKey, TValue> kvp)
+    {
+        yield return new KeyValuePair<TKey, TValue>(kvp, kvp.Value);
+    }
+}";
+            var comp = CreateCompilationWithMscorlib45(text);
+            comp.VerifyDiagnostics(
+                // (8,53): error CS1503: Argument 1: cannot convert from 'System.Collections.Generic.KeyValuePair<TKey, TValue>' to 'TKey'
+                //         yield return new KeyValuePair<TKey, TValue>(kvp, kvp.Value);
+                Diagnostic(ErrorCode.ERR_BadArgType, "kvp").WithArguments("1", "System.Collections.Generic.KeyValuePair<TKey, TValue>", "TKey").WithLocation(8, 53)
+                );
+
+            var tree = comp.SyntaxTrees[0];
+            var node = tree.GetRoot().DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Single();
+
+            Assert.Equal("new KeyValuePair<TKey, TValue>(kvp, kvp.Value)", node.ToString());
+
+            var model = comp.GetSemanticModel(tree);
+            var typeInfo = model.GetTypeInfo(node);
+            var symbolInfo = model.GetSymbolInfo(node);
+
+            Assert.Null(model.GetDeclaredSymbol(node));
+            Assert.Equal("System.Collections.Generic.KeyValuePair<TKey, TValue>", typeInfo.Type.ToTestDisplayString());
+            Assert.Equal(typeInfo.Type, typeInfo.ConvertedType);
+            Assert.True(model.GetConversion(node).IsIdentity);
+
+            Assert.Null(symbolInfo.Symbol);
+            Assert.Contains("System.Collections.Generic.KeyValuePair<TKey, TValue>..ctor(TKey key, TValue value)", symbolInfo.CandidateSymbols.Select(c => c.ToTestDisplayString()));
+            Assert.Equal(CandidateReason.OverloadResolutionFailure, symbolInfo.CandidateReason);
         }
     }
 }

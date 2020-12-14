@@ -1,8 +1,11 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Generic
 Imports System.Collections.Immutable
 Imports System.Threading
+Imports Microsoft.CodeAnalysis.PooledObjects
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
@@ -252,7 +255,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End If
 
             For Each pair As KeyValuePair(Of TypeParameterSymbol, TypeSymbol) In _fixedTypeParameters
-                If pair.Key = reducedFromTypeParameter Then
+                If TypeSymbol.Equals(pair.Key, reducedFromTypeParameter, TypeCompareKind.ConsiderEverything) Then
                     Return pair.Value
                 End If
             Next
@@ -766,15 +769,17 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                 Return Hash.Combine(_ordinal.GetHashCode(), Me.ContainingSymbol.GetHashCode())
             End Function
 
-            Public Overrides Function Equals(obj As Object) As Boolean
+            Public Overrides Function Equals(other As TypeSymbol, comparison As TypeCompareKind) As Boolean
+                Return Equals(TryCast(other, ReducedTypeParameterSymbol), comparison)
+            End Function
 
-                If Me Is obj Then
+            Public Overloads Function Equals(other As ReducedTypeParameterSymbol, comparison As TypeCompareKind) As Boolean
+
+                If Me Is other Then
                     Return True
                 End If
 
-                Dim other = TryCast(obj, ReducedTypeParameterSymbol)
-
-                Return other IsNot Nothing AndAlso Me._ordinal = other._ordinal AndAlso Me.ContainingSymbol.Equals(other.ContainingSymbol)
+                Return other IsNot Nothing AndAlso Me._ordinal = other._ordinal AndAlso Me.ContainingSymbol.Equals(other.ContainingSymbol, comparison)
             End Function
 
         End Class

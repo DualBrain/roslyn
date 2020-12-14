@@ -1,12 +1,15 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Security;
-using Microsoft.Build.Framework;
-using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Security;
 
 namespace Microsoft.CodeAnalysis.BuildTasks
 {
@@ -15,6 +18,14 @@ namespace Microsoft.CodeAnalysis.BuildTasks
     /// </summary>
     internal static class Utilities
     {
+        private const string MSBuildRoslynFolderName = "Roslyn";
+
+        /// <summary>
+        /// Copied from msbuild. ItemSpecs are normalized using this method.
+        /// </summary>
+        public static string FixFilePath(string path)
+            => string.IsNullOrEmpty(path) || Path.DirectorySeparatorChar == '\\' ? path : path.Replace('\\', '/');
+
         /// <summary>
         /// Convert a task item metadata to bool. Throw an exception if the string is badly formed and can't
         /// be converted.
@@ -139,15 +150,34 @@ namespace Microsoft.CodeAnalysis.BuildTasks
             return new ArgumentException(string.Format(CultureInfo.CurrentCulture, errorString, args));
         }
 
-        internal static string GetLocation(Assembly assembly)
+        internal static string? TryGetAssemblyPath(Assembly assembly)
         {
-            var method = typeof(Assembly).GetTypeInfo().GetDeclaredProperty("Location")?.GetMethod;
-            if (method == null)
+            if (assembly.GlobalAssemblyCache)
             {
                 return null;
             }
 
-            return (string)method.Invoke(assembly, parameters: null);
+            if (assembly.CodeBase is { } codebase)
+            {
+                var uri = new Uri(codebase);
+                return uri.IsFile ? uri.LocalPath : assembly.Location;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Generate the full path to the tool that is deployed with our build tasks.
+        /// </summary>
+        internal static string GenerateFullPathToTool(string toolName)
+        {
+            var buildTask = typeof(Utilities).GetTypeInfo().Assembly;
+            var assemblyPath = buildTask.Location;
+            var assemblyDirectory = Path.GetDirectoryName(assemblyPath);
+
+            return RuntimeHostInfo.IsDesktopRuntime
+                ? Path.Combine(assemblyDirectory!, toolName)
+                : Path.Combine(assemblyDirectory!, "bincore", toolName);
         }
     }
 }

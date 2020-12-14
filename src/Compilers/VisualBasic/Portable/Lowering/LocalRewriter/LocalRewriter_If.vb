@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports Microsoft.CodeAnalysis.Text
@@ -53,7 +55,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         Throw ExceptionUtilities.UnexpectedValue(syntax.Kind)
                 End Select
 
-                newConsequence = Concat(newConsequence, _instrumenter.InstrumentIfStatementConsequenceEpilogue(node, resumeTarget))
+                newConsequence = Concat(newConsequence, _instrumenterOpt.InstrumentIfStatementConsequenceEpilogue(node, resumeTarget))
             End If
 
             If generateUnstructuredExceptionHandlingResumeCode AndAlso finishConsequenceWithResumeTarget Then
@@ -74,13 +76,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         End If
 
                         newAlternative = Concat(newAlternative,
-                                                _instrumenter.InstrumentIfStatementAlternativeEpilogue(node, resumeTarget))
-                        newAlternative = PrependWithPrologue(newAlternative, _instrumenter.CreateIfStatementAlternativePrologue(node))
+                                                _instrumenterOpt.InstrumentIfStatementAlternativeEpilogue(node, resumeTarget))
+                        newAlternative = PrependWithPrologue(newAlternative, _instrumenterOpt.CreateIfStatementAlternativePrologue(node))
                     End If
                 Else
                     Dim asElse = TryCast(node.AlternativeOpt.Syntax, SingleLineElseClauseSyntax)
                     If asElse IsNot Nothing Then
-                        newAlternative = PrependWithPrologue(newAlternative, _instrumenter.CreateIfStatementAlternativePrologue(node))
+                        newAlternative = PrependWithPrologue(newAlternative, _instrumenterOpt.CreateIfStatementAlternativePrologue(node))
                         ' single line if has no EndIf
                     End If
                 End If
@@ -92,7 +94,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             ' the containing method is edited while methods invoked in the condition are being executed.
             Debug.Assert(newCondition IsNot Nothing)
             If instrument Then
-                newCondition = _instrumenter.InstrumentIfStatementCondition(node, newCondition, _currentMethodOrLambda)
+                newCondition = _instrumenterOpt.InstrumentIfStatementCondition(node, newCondition, _currentMethodOrLambda)
             End If
 
             Dim result As BoundStatement = RewriteIfStatement(
@@ -145,16 +147,16 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         Case SyntaxKind.MultiLineIfBlock,
                              SyntaxKind.ElseIfBlock,
                              SyntaxKind.SingleLineIfStatement
-                            condGoto = _instrumenter.InstrumentIfStatementConditionalGoto(DirectCast(instrumentationTargetOpt, BoundIfStatement), condGoto)
+                            condGoto = _instrumenterOpt.InstrumentIfStatementConditionalGoto(DirectCast(instrumentationTargetOpt, BoundIfStatement), condGoto)
                         Case SyntaxKind.CaseBlock
-                            condGoto = _instrumenter.InstrumentCaseBlockConditionalGoto(DirectCast(instrumentationTargetOpt, BoundCaseBlock), condGoto)
+                            condGoto = _instrumenterOpt.InstrumentCaseBlockConditionalGoto(DirectCast(instrumentationTargetOpt, BoundCaseBlock), condGoto)
                         Case Else
                             Throw ExceptionUtilities.UnexpectedValue(instrumentationTargetOpt.Syntax.Kind)
                     End Select
 
                     If instrumentationTargetOpt.Syntax.Kind = SyntaxKind.MultiLineIfBlock Then
                         ' If it is a multiline If and there is no else, associate afterIf with EndIf
-                        afterIfStatement = _instrumenter.InstrumentIfStatementAfterIfStatement(DirectCast(instrumentationTargetOpt, BoundIfStatement), afterIfStatement)
+                        afterIfStatement = _instrumenterOpt.InstrumentIfStatementAfterIfStatement(DirectCast(instrumentationTargetOpt, BoundIfStatement), afterIfStatement)
                     Else
                         ' otherwise hide afterif (so that it does not associate with if body).
                         afterIfStatement = SyntheticBoundNodeFactory.HiddenSequencePoint(afterIfStatement)
@@ -189,9 +191,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         Case SyntaxKind.MultiLineIfBlock,
                              SyntaxKind.ElseIfBlock,
                              SyntaxKind.SingleLineIfStatement
-                            condGoto = _instrumenter.InstrumentIfStatementConditionalGoto(DirectCast(instrumentationTargetOpt, BoundIfStatement), condGoto)
+                            condGoto = _instrumenterOpt.InstrumentIfStatementConditionalGoto(DirectCast(instrumentationTargetOpt, BoundIfStatement), condGoto)
                         Case SyntaxKind.CaseBlock
-                            condGoto = _instrumenter.InstrumentCaseBlockConditionalGoto(DirectCast(instrumentationTargetOpt, BoundCaseBlock), condGoto)
+                            condGoto = _instrumenterOpt.InstrumentCaseBlockConditionalGoto(DirectCast(instrumentationTargetOpt, BoundCaseBlock), condGoto)
                         Case Else
                             Throw ExceptionUtilities.UnexpectedValue(instrumentationTargetOpt.Syntax.Kind)
                     End Select

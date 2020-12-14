@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -10,7 +12,7 @@ namespace Microsoft.CodeAnalysis.CSharp
     {
         public override BoundNode VisitReturnStatement(BoundReturnStatement node)
         {
-            BoundStatement rewritten = (BoundStatement)base.VisitReturnStatement(node);
+            BoundStatement rewritten = (BoundStatement)base.VisitReturnStatement(node)!;
 
             // NOTE: we will apply sequence points to synthesized return 
             // statements if they are contained in lambdas and have expressions
@@ -22,9 +24,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             // does not need sequence points added here since it would be done later (presumably during Async rewrite).
             if (this.Instrument &&
                 (!node.WasCompilerGenerated ||
-                 (node.ExpressionOpt != null ? 
+                 (node.ExpressionOpt != null ?
                         IsLambdaOrExpressionBodiedMember :
-                        (node.Syntax.Kind() == SyntaxKind.Block && _factory.CurrentMethod?.IsAsync == false))))
+                        (node.Syntax.Kind() == SyntaxKind.Block && _factory.CurrentFunction?.IsAsync == false))))
             {
                 rewritten = _instrumenter.InstrumentReturnStatement(node, rewritten);
             }
@@ -36,14 +38,14 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             get
             {
-                var method = _factory.CurrentMethod;
+                var method = _factory.CurrentFunction;
                 if (method is LambdaSymbol)
                 {
                     return true;
                 }
 
                 return
-                    (method as SourceMethodSymbol)?.IsExpressionBodied ??
+                    (method as SourceMemberMethodSymbol)?.IsExpressionBodied ??
                     (method as LocalFunctionSymbol)?.IsExpressionBodied ?? false;
             }
         }

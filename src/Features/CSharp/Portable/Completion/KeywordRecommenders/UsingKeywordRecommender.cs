@@ -1,6 +1,11 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Threading;
+using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Extensions.ContextQuery;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -16,13 +21,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
         protected override bool IsValidContext(int position, CSharpSyntaxContext context, CancellationToken cancellationToken)
         {
             // cases:
-            //  using (foo) { }
-            //  using Foo;
-            //  using Foo = Bar;
+            //  using (goo) { }
+            //  using Goo;
+            //  using Goo = Bar;
+            //  await using (goo) { }
             return
                 context.IsStatementContext ||
                 context.IsGlobalStatementContext ||
-                IsUsingDirectiveContext(context, cancellationToken);
+                IsUsingDirectiveContext(context, cancellationToken) ||
+                context.IsAwaitStatementContext(position, cancellationToken);
         }
 
         private static bool IsUsingDirectiveContext(CSharpSyntaxContext context, CancellationToken cancellationToken)
@@ -38,16 +45,16 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
             // extern alias a;
             // u|
 
-            // using Foo;
+            // using Goo;
             // |
 
-            // using Foo;
+            // using Goo;
             // u|
 
-            // using Foo = Bar;
+            // using Goo = Bar;
             // |
 
-            // using Foo = Bar;
+            // using Goo = Bar;
             // u|
 
             // t valid:
@@ -74,15 +81,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
 
             // root: u|
 
-            // ns Foo { u|
+            // ns Goo { u|
 
             // extern alias a;
             // u|
 
-            // using Foo;
+            // using Goo;
             // u|
 
-            // using Foo = Bar;
+            // using Goo = Bar;
             // u|
 
             // root: |
@@ -102,10 +109,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
             }
 
             if (token.Kind() == SyntaxKind.OpenBraceToken &&
-                token.Parent.IsKind(SyntaxKind.NamespaceDeclaration))
+                token.Parent.IsKind(SyntaxKind.NamespaceDeclaration, out NamespaceDeclarationSyntax _))
             {
-                var ns = (NamespaceDeclarationSyntax)token.Parent;
-
                 // a child using can't come before externs
                 var nextToken = originalToken.GetNextToken(includeSkipped: true);
                 if (nextToken.Kind() == SyntaxKind.ExternKeyword)
@@ -119,7 +124,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Completion.KeywordRecommenders
             // extern alias a;
             // |
 
-            // using Foo;
+            // using Goo;
             // |
             if (token.Kind() == SyntaxKind.SemicolonToken)
             {

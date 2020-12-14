@@ -1,10 +1,15 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
-using System.Collections.Generic;
 using System.Composition;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.CodeAnalysis.Editor.GoToDefinition;
 using Microsoft.CodeAnalysis.Editor.Host;
+using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Host.Mef;
 
 namespace Microsoft.CodeAnalysis.Editor.CSharp.GoToDefinition
@@ -13,15 +18,12 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.GoToDefinition
     internal class CSharpGoToDefinitionService : AbstractGoToDefinitionService
     {
         [ImportingConstructor]
+        [SuppressMessage("RoslynDiagnosticsReliability", "RS0033:Importing constructor should be [Obsolete]", Justification = "Used in test code: https://github.com/dotnet/roslyn/issues/42814")]
         public CSharpGoToDefinitionService(
-            [ImportMany]IEnumerable<Lazy<IStreamingFindUsagesPresenter>> streamingPresenters) 
-            : base(streamingPresenters)
+            IThreadingContext threadingContext,
+            Lazy<IStreamingFindUsagesPresenter> streamingPresenter)
+            : base(threadingContext, streamingPresenter)
         {
-        }
-
-        protected override ISymbol FindRelatedExplicitlyDeclaredSymbol(ISymbol symbol, Compilation compilation)
-        {
-            return symbol;
         }
     }
 }

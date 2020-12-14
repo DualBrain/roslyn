@@ -1,25 +1,26 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
-Option Strict Off
 Imports Microsoft.CodeAnalysis.CodeActions
 Imports Microsoft.CodeAnalysis.CodeFixes
 Imports Microsoft.CodeAnalysis.Diagnostics
-Imports Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.Diagnostics
+Imports Microsoft.CodeAnalysis.Remote.Testing
 Imports Microsoft.CodeAnalysis.VisualBasic.AddImport
-Imports Microsoft.CodeAnalysis.VisualBasic.Diagnostics
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.CodeActions.AddImport
-    Partial Public Class AddImportTests
-        Inherits AbstractVisualBasicDiagnosticProviderBasedUserDiagnosticTest
 
-        Friend Overrides Function CreateDiagnosticProviderAndFixer(workspace As Workspace) As Tuple(Of DiagnosticAnalyzer, CodeFixProvider)
-            Return Tuple.Create(Of DiagnosticAnalyzer, CodeFixProvider)(
-                Nothing,
-                New VisualBasicAddImportCodeFixProvider())
+    <Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+    Public Class AddImportTests
+        Inherits AbstractAddImportTests
+
+        Friend Overrides Function CreateDiagnosticProviderAndFixer(workspace As Workspace) As (DiagnosticAnalyzer, CodeFixProvider)
+            Return (Nothing, New VisualBasicAddImportCodeFixProvider())
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestSimpleImportFromSameFile() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestSimpleImportFromSameFile(testHost As TestHost) As Task
             Await TestAsync(
 "Class Class1
     Dim v As [|SomeClass1|]
@@ -28,19 +29,21 @@ Namespace SomeNamespace
     Public Class SomeClass1
     End Class
 End Namespace",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 Class Class1
     Dim v As SomeClass1
 End Class
 Namespace SomeNamespace
     Public Class SomeClass1
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Theory(Skip:="https://github.com/dotnet/roslyn/issues/41484")>
+        <CombinatorialData>
         <WorkItem(11241, "https://github.com/dotnet/roslyn/issues/11241")>
-        Public Async Function TestAddImportWithCaseChange() As Task
+        Public Async Function TestAddImportWithCaseChange(testHost As TestHost) As Task
             Await TestAsync(
 "Namespace N1
     Public Class TextBox
@@ -51,8 +54,7 @@ Class Class1
     Inherits [|Textbox|]
 
 End Class",
-"
-Imports N1
+                "Imports N1
 
 Namespace N1
     Public Class TextBox
@@ -62,22 +64,24 @@ End Namespace
 Class Class1
     Inherits TextBox
 
-End Class", priority:=CodeActionPriority.Medium)
+End Class", testHost, priority:=CodeActionPriority.Medium)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestSimpleImportFromReference() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestSimpleImportFromReference(testHost As TestHost) As Task
             Await TestAsync(
 "Class Class1
     Dim v As [|Thread|]
 End Class",
-"Imports System.Threading
+                "Imports System.Threading
+
 Class Class1
     Dim v As Thread
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestSmartTagDisplay() As Task
             Await TestSmartTagTextAsync(
 "Class Class1
@@ -86,8 +90,9 @@ End Class",
 "Imports System.Threading")
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericClassDefinitionAsClause() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericClassDefinitionAsClause(testHost As TestHost) As Task
             Await TestAsync(
 "Namespace SomeNamespace
     Class Base
@@ -95,17 +100,19 @@ End Class",
 End Namespace
 Class SomeClass(Of x As [|Base|])
 End Class",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 Namespace SomeNamespace
     Class Base
     End Class
 End Namespace
 Class SomeClass(Of x As Base)
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericClassInstantiationOfClause() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericClassInstantiationOfClause(testHost As TestHost) As Task
             Await TestAsync(
 "Namespace SomeNamespace
     Class SomeClass
@@ -113,103 +120,111 @@ End Class")
 End Namespace
 Class GenericClass(Of T)
 End Class
-Class Foo
+Class Goo
     Sub Method1()
         Dim q As GenericClass(Of [|SomeClass|])
     End Sub
 End Class",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 Namespace SomeNamespace
     Class SomeClass
     End Class
 End Namespace
 Class GenericClass(Of T)
 End Class
-Class Foo
+Class Goo
     Sub Method1()
         Dim q As GenericClass(Of SomeClass)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericMethodDefinitionAsClause() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericMethodDefinitionAsClause(testHost As TestHost) As Task
             Await TestAsync(
 "Namespace SomeNamespace
     Class SomeClass
     End Class
 End Namespace
-Class Foo
+Class Goo
     Sub Method1(Of T As [|SomeClass|])
     End Sub
 End Class",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 Namespace SomeNamespace
     Class SomeClass
     End Class
 End Namespace
-Class Foo
+Class Goo
     Sub Method1(Of T As SomeClass)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericMethodInvocationOfClause() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericMethodInvocationOfClause(testHost As TestHost) As Task
             Await TestAsync(
 "Namespace SomeNamespace
     Class SomeClass
     End Class
 End Namespace
-Class Foo
+Class Goo
     Sub Method1(Of T)
     End Sub
     Sub Method2()
         Method1(Of [|SomeClass|])
     End Sub
 End Class",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 Namespace SomeNamespace
     Class SomeClass
     End Class
 End Namespace
-Class Foo
+Class Goo
     Sub Method1(Of T)
     End Sub
     Sub Method2()
         Method1(Of SomeClass)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAttributeApplication() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAttributeApplication(testHost As TestHost) As Task
             Await TestAsync(
 "<[|Something|]()>
-Class Foo
+Class Goo
 End Class
 Namespace SomeNamespace
     Class SomethingAttribute
         Inherits System.Attribute
     End Class
 End Namespace",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 <Something()>
-Class Foo
+Class Goo
 End Class
 Namespace SomeNamespace
     Class SomethingAttribute
         Inherits System.Attribute
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestMultipleAttributeApplicationBelow() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestMultipleAttributeApplicationBelow(testHost As TestHost) As Task
             Await TestAsync(
 "<Existing()>
 <[|Something|]()>
-Class Foo
+Class Goo
 End Class
 Class ExistingAttribute
     Inherits System.Attribute
@@ -219,10 +234,11 @@ Namespace SomeNamespace
         Inherits System.Attribute
     End Class
 End Namespace",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 <Existing()>
 <Something()>
-Class Foo
+Class Goo
 End Class
 Class ExistingAttribute
     Inherits System.Attribute
@@ -231,15 +247,16 @@ Namespace SomeNamespace
     Class SomethingAttribute
         Inherits System.Attribute
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestMultipleAttributeApplicationAbove() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestMultipleAttributeApplicationAbove(testHost As TestHost) As Task
             Await TestAsync(
 "<[|Something|]()>
 <Existing()>
-Class Foo
+Class Goo
 End Class
 Class ExistingAttribute
     Inherits System.Attribute
@@ -249,10 +266,11 @@ Namespace SomeNamespace
         Inherits System.Attribute
     End Class
 End Namespace",
-"Imports SomeNamespace
+                "Imports SomeNamespace
+
 <Something()>
 <Existing()>
-Class Foo
+Class Goo
 End Class
 Class ExistingAttribute
     Inherits System.Attribute
@@ -261,11 +279,12 @@ Namespace SomeNamespace
     Class SomethingAttribute
         Inherits System.Attribute
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestImportsIsEscapedWhenNamespaceMatchesKeyword() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestImportsIsEscapedWhenNamespaceMatchesKeyword(testHost As TestHost) As Task
             Await TestAsync(
 "Class SomeClass
     Dim x As [|Something|]
@@ -274,18 +293,20 @@ Namespace [Namespace]
     Class Something
     End Class
 End Namespace",
-"Imports [Namespace]
+                "Imports [Namespace]
+
 Class SomeClass
     Dim x As Something
 End Class
 Namespace [Namespace]
     Class Something
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestImportsIsNOTEscapedWhenNamespaceMatchesKeywordButIsNested() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestImportsIsNOTEscapedWhenNamespaceMatchesKeywordButIsNested(testHost As TestHost) As Task
             Await TestAsync(
 "Class SomeClass
     Dim x As [|Something|]
@@ -296,7 +317,8 @@ Namespace Outer
         End Class
     End Namespace
 End Namespace",
-"Imports Outer.Namespace
+                "Imports Outer.Namespace
+
 Class SomeClass
     Dim x As Something
 End Class
@@ -305,12 +327,12 @@ Namespace Outer
         Class Something
         End Class
     End Namespace
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportsNotSuggestedForImportsStatement() As Task
-            Await TestMissingAsync(
+            Await TestMissingInRegularAndScriptAsync(
 "Imports [|InnerNamespace|]
 Namespace SomeNamespace
     Namespace InnerNamespace
@@ -320,11 +342,11 @@ Namespace SomeNamespace
 End Namespace")
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportsNotSuggestedForGenericTypeParametersOfClause() As Task
-            Await TestMissingAsync(
+            Await TestMissingInRegularAndScriptAsync(
 "Class SomeClass
-    Sub Foo(Of [|SomeClass|])(x As SomeClass)
+    Sub Goo(Of [|SomeClass|])(x As SomeClass)
     End Sub
 End Class
 Namespace SomeNamespace
@@ -333,11 +355,11 @@ Namespace SomeNamespace
 End Namespace")
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportsNotSuggestedForGenericTypeParametersAsClause() As Task
-            Await TestMissingAsync(
+            Await TestMissingInRegularAndScriptAsync(
 "Class SomeClass
-    Sub Foo(Of SomeClass)(x As [|SomeClass|])
+    Sub Goo(Of SomeClass)(x As [|SomeClass|])
     End Sub
 End Class
 Namespace SomeNamespace
@@ -347,180 +369,198 @@ End Namespace")
         End Function
 
         <WorkItem(540543, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540543")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestCaseSensitivity1() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestCaseSensitivity1(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Dim x As [|someclass|]
 End Class
 Namespace SomeNamespace
     Class SomeClass
     End Class
 End Namespace",
-"Imports SomeNamespace
-Class Foo
+                "Imports SomeNamespace
+
+Class Goo
     Dim x As SomeClass
 End Class
 Namespace SomeNamespace
     Class SomeClass
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestTypeFromMultipleNamespaces1() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestTypeFromMultipleNamespaces1(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Function F() As [|IDictionary|]
     End Function
 End Class",
-"Imports System.Collections
-Class Foo
+                "Imports System.Collections
+
+Class Goo
     Function F() As IDictionary
     End Function
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestTypeFromMultipleNamespaces2() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestTypeFromMultipleNamespaces2(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Function F() As [|IDictionary|]
     End Function
 End Class",
-"Imports System.Collections.Generic
-Class Foo
+                "Imports System.Collections.Generic
+
+Class Goo
     Function F() As IDictionary
     End Function
 End Class",
-index:=1)
+                testHost, index:=1)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericWithNoArgs() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericWithNoArgs(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Function F() As [|List|]
     End Function
 End Class",
-"Imports System.Collections.Generic
-Class Foo
+                "Imports System.Collections.Generic
+
+Class Goo
     Function F() As List
     End Function
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericWithCorrectArgs() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericWithCorrectArgs(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Function F() As [|List(Of Integer)|]
     End Function
 End Class",
-"Imports System.Collections.Generic
-Class Foo
+                "Imports System.Collections.Generic
+
+Class Goo
     Function F() As List(Of Integer)
     End Function
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestGenericWithWrongArgs1() As Task
-            Await TestMissingAsync(
-"Class Foo
+            Await TestMissingInRegularAndScriptAsync(
+"Class Goo
     Function F() As [|List(Of Integer, String, Boolean)|]
     End Function
 End Class")
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestGenericWithWrongArgs2() As Task
-            Await TestMissingAsync(
-"Class Foo
+            Await TestMissingInRegularAndScriptAsync(
+"Class Goo
     Function F() As [|List(Of Integer, String)|]
     End Function
 End Class")
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericInLocalDeclaration() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericInLocalDeclaration(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Sub Test()
         Dim x As New [|List(Of Integer)|]
     End Sub
 End Class",
-"Imports System.Collections.Generic
-Class Foo
+                "Imports System.Collections.Generic
+
+Class Goo
     Sub Test()
         Dim x As New List(Of Integer)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericItemType() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericItemType(testHost As TestHost) As Task
             Await TestAsync(
-"Class Foo
+"Class Goo
     Sub Test()
         Dim x As New List(Of [|Int32|])
     End Sub
 End Class",
-"Imports System
-Class Foo
+                "Imports System
+
+Class Goo
     Sub Test()
         Dim x As New List(Of Int32)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenerateWithExistingUsings() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenerateWithExistingUsings(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
-Class Foo
+Class Goo
     Sub Test()
         Dim x As New [|List(Of Integer)|]
     End Sub
 End Class",
-"Imports System
+                "Imports System
 Imports System.Collections.Generic
-Class Foo
+
+Class Goo
     Sub Test()
         Dim x As New List(Of Integer)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenerateInNamespace() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenerateInNamespace(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
 Namespace NS
-    Class Foo
+    Class Goo
         Sub Test()
             Dim x As New [|List(Of Integer)|]
         End Sub
     End Class
 End Namespace",
-"Imports System
+                "Imports System
 Imports System.Collections.Generic
+
 Namespace NS
-    Class Foo
+    Class Goo
         Sub Test()
             Dim x As New List(Of Integer)
         End Sub
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(540519, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540519")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestCodeIssueCountInExistingUsing() As Task
             Await TestActionCountAsync(
 "Imports System.Collections.Generic
 Namespace NS
-    Class Foo
+    Class Goo
         Function Test() As [|IDictionary|]
         End Function
     End Class
@@ -529,29 +569,31 @@ count:=1)
         End Function
 
         <WorkItem(540519, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540519")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestFixInExistingUsing() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestFixInExistingUsing(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Collections.Generic
 Namespace NS
-    Class Foo
+    Class Goo
         Function Test() As [|IDictionary|]
         End Function
     End Class
 End Namespace",
-"Imports System.Collections
+                "Imports System.Collections
 Imports System.Collections.Generic
 Namespace NS
-    Class Foo
+    Class Goo
         Function Test() As IDictionary
         End Function
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(541731, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541731")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestGenericExtensionMethod() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestGenericExtensionMethod(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Collections.Generic
 Class Test
@@ -559,17 +601,19 @@ Class Test
         args.[|Where|]()
     End Sub
 End Class",
-"Imports System.Collections.Generic
+                "Imports System.Collections.Generic
 Imports System.Linq
+
 Class Test
     Private Sub Method(args As IList(Of Integer))
         args.Where()
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestParameterType() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestParameterType(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
 Imports System.Collections.Generic
@@ -578,42 +622,44 @@ Module Program
     Sub Main(args As String(), f As [|FileMode|])
     End Sub
 End Module",
-"Imports System
+                "Imports System
 Imports System.Collections.Generic
 Imports System.IO
 Imports System.Linq
 Module Program
     Sub Main(args As String(), f As FileMode)
     End Sub
-End Module")
+End Module", testHost)
         End Function
 
         <WorkItem(540519, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540519")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddWithExistingConflictWithDifferentArity() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddWithExistingConflictWithDifferentArity(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Collections.Generic
 Namespace NS
-    Class Foo
+    Class Goo
         Function Test() As [|IDictionary|]
         End Function
     End Class
 End Namespace",
-"Imports System.Collections
+                "Imports System.Collections
 Imports System.Collections.Generic
 Namespace NS
-    Class Foo
+    Class Goo
         Function Test() As IDictionary
         End Function
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(540673, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540673")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestImportNamespace() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestImportNamespace(testHost As TestHost) As Task
             Await TestAsync(
-"Class FOo
+"Class GOo
     Sub bar()
         Dim q As [|innernamespace|].someClass
     End Sub
@@ -624,8 +670,9 @@ Namespace SomeNamespace
         End Class
     End Namespace
 End Namespace",
-"Imports SomeNamespace
-Class FOo
+                "Imports SomeNamespace
+
+Class GOo
     Sub bar()
         Dim q As InnerNamespace.SomeClass
     End Sub
@@ -635,13 +682,14 @@ Namespace SomeNamespace
         Class SomeClass
         End Class
     End Namespace
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestCaseSensitivity2() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestCaseSensitivity2(testHost As TestHost) As Task
             Await TestAsync(
-"Class FOo
+"Class GOo
     Sub bar()
         Dim q As [|innernamespace|].someClass
     End Sub
@@ -652,8 +700,9 @@ Namespace SomeNamespace
         End Class
     End Namespace
 End Namespace",
-"Imports SomeNamespace
-Class FOo
+                "Imports SomeNamespace
+
+Class GOo
     Sub bar()
         Dim q As InnerNamespace.SomeClass
     End Sub
@@ -663,41 +712,44 @@ Namespace SomeNamespace
         Class SomeClass
         End Class
     End Namespace
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(540745, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540745")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestCaseSensitivity3() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestCaseSensitivity3(testHost As TestHost) As Task
             Await TestAsync(
 "Module Program
     Sub Main(args As String())
-        Dim x As [|foo|]
+        Dim x As [|goo|]
     End Sub
 End Module
 Namespace OUTER
     Namespace INNER
-        Friend Class FOO
+        Friend Class GOO
         End Class
     End Namespace
 End Namespace",
-"Imports OUTER.INNER
+                "Imports OUTER.INNER
+
 Module Program
     Sub Main(args As String())
-        Dim x As FOO
+        Dim x As GOO
     End Sub
 End Module
 Namespace OUTER
     Namespace INNER
-        Friend Class FOO
+        Friend Class GOO
         End Class
     End Namespace
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(541746, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541746")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddBlankLineAfterLastImports() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddBlankLineAfterLastImports(testHost As TestHost) As Task
             Await TestAsync(
 <Text>Imports System
 Imports System.Collections.Generic
@@ -709,14 +761,14 @@ Module Program
 End Module
 
 &lt;[|SomeAttr|]&gt;
-Class Foo
+Class Goo
 End Class
 Namespace SomeNamespace
     Friend Class SomeAttrAttribute
         Inherits Attribute
     End Class
 End Namespace</Text>.Value.Replace(vbLf, vbCrLf),
-<Text>Imports System
+                <Text>Imports System
 Imports System.Collections.Generic
 Imports System.Linq
 Imports SomeNamespace
@@ -727,19 +779,18 @@ Module Program
 End Module
 
 &lt;SomeAttr&gt;
-Class Foo
+Class Goo
 End Class
 Namespace SomeNamespace
     Friend Class SomeAttrAttribute
         Inherits Attribute
     End Class
-End Namespace</Text>.Value.Replace(vbLf, vbCrLf),
-index:=0,
-compareTokens:=False)
+End Namespace</Text>.Value.Replace(vbLf, vbCrLf), testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestSimpleWhereClause() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestSimpleWhereClause(testHost As TestHost) As Task
             Await TestAsync(
 "Class Program
     Public Sub Linq1()
@@ -749,7 +800,8 @@ compareTokens:=False)
                       Select n|]
     End Sub
 End Class",
-"Imports System.Linq
+                "Imports System.Linq
+
 Class Program
     Public Sub Linq1()
         Dim numbers() As Integer = New Integer(9) {5, 4, 1, 3, 9, 8, 6, 7, 2, 0}
@@ -757,11 +809,12 @@ Class Program
                       Where n < 5 _
                       Select n
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAggregateClause() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAggregateClause(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Collections.Generic
 Class Program
@@ -771,79 +824,83 @@ Class Program
         Into greaterThan5 = All(n > 5)|]
     End Sub
 End Class",
-"Imports System.Collections.Generic
+                "Imports System.Collections.Generic
 Imports System.Linq
+
 Class Program
     Public Sub Linq1()
         Dim numbers() As Integer = New Integer(9) {5, 4, 1, 3, 9, 8, 6, 7, 2, 0}
         Dim greaterNums = Aggregate n In numbers
         Into greaterThan5 = All(n > 5)
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
         <WorkItem(543107, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543107")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestNoCrashOnMissingLeftSide() As Task
-            Await TestMissingAsync(
+            Await TestMissingInRegularAndScriptAsync(
 "Imports System
 Class C1
-    Sub foo()
+    Sub goo()
         Dim s = .[|first|]
     End Sub
 End Class")
         End Function
 
         <WorkItem(544335, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544335")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestOnCallWithoutArgumentList() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestOnCallWithoutArgumentList(testHost As TestHost) As Task
             Await TestAsync(
 "Module Program
     Sub Main(args As String())
         [|File|]
     End Sub
 End Module",
-"Imports System.IO
+                "Imports System.IO
+
 Module Program
     Sub Main(args As String())
         File
     End Sub
-End Module")
+End Module", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddToVisibleRegion() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddToVisibleRegion(testHost As TestHost) As Task
             Await TestAsync(
 "#ExternalSource (""Default.aspx"", 1) 
 Imports System
 #End ExternalSource
 #ExternalSource (""Default.aspx"", 2) 
 Class C
-    Sub Foo()
+    Sub Goo()
         Dim x As New [|StreamReader|]
 #End ExternalSource
     End Sub
 End Class",
-"#ExternalSource (""Default.aspx"", 1) 
+                "#ExternalSource (""Default.aspx"", 1)
 Imports System
 Imports System.IO
 #End ExternalSource
-#ExternalSource (""Default.aspx"", 2) 
+#ExternalSource (""Default.aspx"", 2)
 Class C
-    Sub Foo()
+    Sub Goo()
         Dim x As New [|StreamReader|]
 #End ExternalSource
     End Sub
-End Class")
+End Class", testHost)
         End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestDoNotAddIntoHiddenRegion() As Task
-            Await TestMissingAsync(
+            Await TestMissingInRegularAndScriptAsync(
 "Imports System
 #ExternalSource (""Default.aspx"", 2) 
 Class C
-    Sub Foo()
+    Sub Goo()
         Dim x As New [|StreamReader|]
 #End ExternalSource
     End Sub
@@ -851,8 +908,9 @@ End Class")
         End Function
 
         <WorkItem(546369, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546369")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestFormattingAfterImports() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestFormattingAfterImports(testHost As TestHost) As Task
             Await TestAsync(
 <Text>Imports B
 Imports A
@@ -862,7 +920,7 @@ Module Program
     End Sub
 End Module
 </Text>.Value.Replace(vbLf, vbCrLf),
-<Text>Imports B
+                <Text>Imports B
 Imports A
 Imports System.Diagnostics
 
@@ -871,13 +929,13 @@ Module Program
         Debug
     End Sub
 End Module
-</Text>.Value.Replace(vbLf, vbCrLf),
-compareTokens:=False)
+</Text>.Value.Replace(vbLf, vbCrLf), testHost)
         End Function
 
         <WorkItem(775448, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/775448")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestShouldTriggerOnBC32045() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestShouldTriggerOnBC32045(testHost As TestHost) As Task
             ' BC32045: 'A' has no type parameters and so cannot have type arguments.
             Await TestAsync(
 <Text>Imports System.Collections
@@ -887,59 +945,62 @@ Module Program
         Dim x As [|IEnumerable(Of Integer)|]
     End Sub
 End Module</Text>.Value.Replace(vbLf, vbCrLf),
-<Text>Imports System.Collections
+                <Text>Imports System.Collections
 Imports System.Collections.Generic
 
 Module Program
     Sub Main(args As String())
         Dim x As IEnumerable(Of Integer)
     End Sub
-End Module</Text>.Value.Replace(vbLf, vbCrLf),
-index:=0,
-compareTokens:=False)
+End Module</Text>.Value.Replace(vbLf, vbCrLf), testHost)
         End Function
 
         <WorkItem(867425, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/867425")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestUnknownIdentifierInModule() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestUnknownIdentifierInModule(testHost As TestHost) As Task
             Await TestAsync(
-"Module Foo
+"Module Goo
     Sub Bar(args As String())
         Dim a = From f In args
                 Let ext = [|Path|]
     End Sub
 End Module",
-"Imports System.IO
-Module Foo
+                "Imports System.IO
+
+Module Goo
     Sub Bar(args As String())
         Dim a = From f In args
                 Let ext = Path
     End Sub
-End Module")
+End Module", testHost)
         End Function
 
         <WorkItem(872908, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/872908")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestConflictedGenericName() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestConflictedGenericName(testHost As TestHost) As Task
             Await TestAsync(
-"Module Foo
+"Module Goo
     Sub Bar(args As String())
         Dim a = From f In args
                 Let ext = [|Path|]
     End Sub
 End Module",
-"Imports System.IO
-Module Foo
+                "Imports System.IO
+
+Module Goo
     Sub Bar(args As String())
         Dim a = From f In args
                 Let ext = Path
     End Sub
-End Module")
+End Module", testHost)
         End Function
 
         <WorkItem(838253, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/838253")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestConflictedInaccessibleType() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestConflictedInaccessibleType(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Diagnostics
 Namespace N
@@ -947,37 +1008,41 @@ Namespace N
     End Class
 End Namespace
 Class C
-    Public Function Foo()
+    Public Function Goo()
         [|Log|]
     End Function
 End Class",
-"Imports System.Diagnostics
+                "Imports System.Diagnostics
 Imports N
+
 Namespace N
     Public Class Log
     End Class
 End Namespace
 Class C
-    Public Function Foo()
+    Public Function Goo()
         Log
     End Function
-End Class", 1)
+End Class", testHost, index:=1)
         End Function
 
         <WorkItem(858085, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/858085")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestConflictedAttributeName() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestConflictedAttributeName(testHost As TestHost) As Task
             Await TestAsync(
 "<[|Description|]> Public Class Description
 End Class",
-"Imports System.ComponentModel
+                "Imports System.ComponentModel
+
 <[|Description|]> Public Class Description
-End Class")
+End Class", testHost)
         End Function
 
         <WorkItem(772321, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/772321")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestExtensionWithThePresenceOfTheSameNameNonExtensionMethod() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestExtensionWithThePresenceOfTheSameNameNonExtensionMethod(testHost As TestHost) As Task
             Await TestAsync(
 "Option Strict On
 Imports System.Runtime.CompilerServices
@@ -985,49 +1050,51 @@ Namespace NS1
     Class Program
         Sub main()
             Dim c = New C()
-            [|c.Foo(4)|]
+            [|c.Goo(4)|]
         End Sub
     End Class
     Class C
-        Sub Foo(ByVal m As String)
+        Sub Goo(ByVal m As String)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
 End Namespace",
-"Option Strict On
+                "Option Strict On
 Imports System.Runtime.CompilerServices
 Imports NS2
+
 Namespace NS1
     Class Program
         Sub main()
             Dim c = New C()
-            c.Foo(4)
+            c.Goo(4)
         End Sub
     End Class
     Class C
-        Sub Foo(ByVal m As String)
+        Sub Goo(ByVal m As String)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(772321, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/772321")>
         <WorkItem(920398, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/920398")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestExtensionWithThePresenceOfTheSameNameNonExtensionPrivateMethod() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestExtensionWithThePresenceOfTheSameNameNonExtensionPrivateMethod(testHost As TestHost) As Task
             Await TestAsync(
 "Option Strict On
 Imports System.Runtime.CompilerServices
@@ -1035,49 +1102,51 @@ Namespace NS1
     Class Program
         Sub main()
             Dim c = New C()
-            [|c.Foo(4)|]
+            [|c.Goo(4)|]
         End Sub
     End Class
     Class C
-        Private Sub Foo(ByVal m As Integer)
+        Private Sub Goo(ByVal m As Integer)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
 End Namespace",
-"Option Strict On
+                "Option Strict On
 Imports System.Runtime.CompilerServices
 Imports NS2
+
 Namespace NS1
     Class Program
         Sub main()
             Dim c = New C()
-            c.Foo(4)
+            c.Goo(4)
         End Sub
     End Class
     Class C
-        Private Sub Foo(ByVal m As Integer)
+        Private Sub Goo(ByVal m As Integer)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(772321, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/772321")>
         <WorkItem(920398, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/920398")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestExtensionWithThePresenceOfTheSameNameExtensionPrivateMethod() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestExtensionWithThePresenceOfTheSameNameExtensionPrivateMethod(testHost As TestHost) As Task
             Await TestAsync(
 "Option Strict On
 Imports System.Runtime.CompilerServices
@@ -1086,18 +1155,18 @@ Namespace NS1
     Class Program
         Sub main()
             Dim c = New C()
-            [|c.Foo(4)|]
+            [|c.Goo(4)|]
         End Sub
     End Class
     Class C
-        Sub Foo(ByVal m As String)
+        Sub Goo(ByVal m As String)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Private Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Private Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
 End Namespace
@@ -1105,30 +1174,31 @@ End Namespace
 Namespace NS3
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
 End Namespace",
-"Option Strict On
+                "Option Strict On
 Imports System.Runtime.CompilerServices
 Imports NS2
 Imports NS3
+
 Namespace NS1
     Class Program
         Sub main()
             Dim c = New C()
-            [|c.Foo(4)|]
+            [|c.Goo(4)|]
         End Sub
     End Class
     Class C
-        Sub Foo(ByVal m As String)
+        Sub Goo(ByVal m As String)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Private Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Private Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
 End Namespace
@@ -1136,14 +1206,14 @@ End Namespace
 Namespace NS3
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(916368, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/916368")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForCref() As Task
             Dim initialText As String = "''' <summary>
 ''' This is just like <see cref=[|""INotifyPropertyChanged""|]/>, but this one is mine.
@@ -1164,7 +1234,7 @@ End Interface"
         End Function
 
         <WorkItem(916368, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/916368")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForCref2() As Task
             Dim initialText As String = "''' <summary>
 ''' This is just like <see cref=[|""INotifyPropertyChanged.PropertyChanged""|]/>, but this one is mine.
@@ -1185,18 +1255,18 @@ End Interface"
         End Function
 
         <WorkItem(916368, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/916368")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForCref3() As Task
             Dim initialText =
 "
-Namespace Foo
+Namespace Goo
     Public Class C
         Public Sub M(a As Bar.D)
         End Sub
     End Class
 End Namespace
 
-Namespace Foo.Bar
+Namespace Goo.Bar
     Public Class D
     End Class
 End Namespace
@@ -1211,16 +1281,16 @@ End Module
 "
             Dim expectedText =
 "
-Imports Foo
+Imports Goo
 
-Namespace Foo
+Namespace Goo
     Public Class C
         Public Sub M(a As Bar.D)
         End Sub
     End Class
 End Namespace
 
-Namespace Foo.Bar
+Namespace Goo.Bar
     Public Class D
     End Class
 End Namespace
@@ -1241,20 +1311,20 @@ End Module
         End Function
 
         <WorkItem(916368, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/916368")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForCref4() As Task
             Dim initialText =
 "
-Imports Foo
+Imports Goo
 
-Namespace Foo
+Namespace Goo
     Public Class C
         Public Sub M(a As Bar.D)
         End Sub
     End Class
 End Namespace
 
-Namespace Foo.Bar
+Namespace Goo.Bar
     Public Class D
     End Class
 End Namespace
@@ -1269,17 +1339,17 @@ End Module
 "
             Dim expectedText =
 "
-Imports Foo
-Imports Foo.Bar
+Imports Goo
+Imports Goo.Bar
 
-Namespace Foo
+Namespace Goo
     Public Class C
         Public Sub M(a As Bar.D)
         End Sub
     End Class
 End Namespace
 
-Namespace Foo.Bar
+Namespace Goo.Bar
     Public Class D
     End Class
 End Namespace
@@ -1300,7 +1370,7 @@ End Module
         End Function
 
         <WorkItem(916368, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/916368")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForCref5() As Task
             Dim initialText =
 "
@@ -1338,52 +1408,54 @@ End Class
         End Function
 
         <WorkItem(772321, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/772321")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestExtensionMethodNoMemberAccessOverload() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestExtensionMethodNoMemberAccessOverload(testHost As TestHost) As Task
             Await TestAsync(
 "Option Strict On
 Imports System.Runtime.CompilerServices
 Namespace NS1
     Class C
-        Sub Foo(ByVal m As String)
+        Sub Goo(ByVal m As String)
         End Sub
         Sub Bar()
-            [|Foo(5)|]
+            [|Goo(5)|]
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
 End Namespace",
-"Option Strict On
+                "Option Strict On
 Imports System.Runtime.CompilerServices
 Imports NS2
 
 Namespace NS1
     Class C
-        Sub Foo(ByVal m As String)
+        Sub Goo(ByVal m As String)
         End Sub
         Sub Bar()
-            Foo(5)
+            Goo(5)
         End Sub
     End Class
 End Namespace
 Namespace NS2
     Module A
         <Extension()>
-        Sub Foo(ByVal ec As NS1.C, ByVal n As Integer)
+        Sub Goo(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
-End Namespace",)
+End Namespace", testHost, )
         End Function
 
         <WorkItem(772321, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/772321")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestExtensionMethodNoMemberAccess() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestExtensionMethodNoMemberAccess(testHost As TestHost) As Task
             Await TestAsync(
 "Option Strict On
 Imports System.Runtime.CompilerServices
@@ -1401,7 +1473,7 @@ Namespace NS2
         End Sub
     End Module
 End Namespace",
-"Option Strict On
+                "Option Strict On
 Imports System.Runtime.CompilerServices
 Imports NS2
 
@@ -1418,12 +1490,13 @@ Namespace NS2
         Sub Test(ByVal ec As NS1.C, ByVal n As Integer)
         End Sub
     End Module
-End Namespace",)
+End Namespace", testHost, )
         End Function
 
         <WorkItem(1003618, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1003618")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddImportsTypeParsedAsNamespace() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddImportsTypeParsedAsNamespace(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
 
@@ -1441,8 +1514,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.AutomaticCompletion
     Public Class A
     End Class
 End Namespace",
-"Imports System
-Imports Microsoft.VisualStudio.Utilities 
+                "Imports System
+Imports Microsoft.VisualStudio.Utilities
 
 Namespace Microsoft.VisualStudio.Utilities
     Public Class ContentTypeAttribute
@@ -1457,12 +1530,13 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.AutomaticCompletion
     <ContentType>
     Public Class A
     End Class
-End Namespace")
+End Namespace", testHost)
         End Function
 
         <WorkItem(773614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/773614")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddImportsForTypeAttribute() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddImportsForTypeAttribute(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
 
@@ -1476,7 +1550,7 @@ Namespace N
     Class Test
     End Class
 End Namespace",
-"Imports System
+                "Imports System
 Imports N.Outer
 
 Namespace N
@@ -1488,12 +1562,13 @@ Namespace N
     <My()>
     Class Test
     End Class
-End Namespace", compareTokens:=False)
+End Namespace", testHost)
         End Function
 
         <WorkItem(773614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/773614")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddImportsForTypeAttributeMultipleNestedClasses() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddImportsForTypeAttributeMultipleNestedClasses(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
 
@@ -1509,7 +1584,7 @@ Namespace N
     Class Test
     End Class
 End Namespace",
-"Imports System
+                "Imports System
 Imports N.Outer.Inner
 
 Namespace N
@@ -1523,12 +1598,13 @@ Namespace N
     <My()>
     Class Test
     End Class
-End Namespace", compareTokens:=False)
+End Namespace", testHost)
         End Function
 
         <WorkItem(773614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/773614")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddImportsForTypeAttributePartiallyQualified() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddImportsForTypeAttributePartiallyQualified(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System
 
@@ -1544,7 +1620,7 @@ Namespace N
     Class Test
     End Class
 End Namespace",
-"Imports System
+                "Imports System
 Imports N.Outer
 
 Namespace N
@@ -1558,12 +1634,13 @@ Namespace N
     <Inner.My()>
     Class Test
     End Class
-End Namespace", compareTokens:=False)
+End Namespace", testHost)
         End Function
 
         <WorkItem(1064815, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1064815")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestConditionalAccessExtensionMethod() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestConditionalAccessExtensionMethod(testHost As TestHost) As Task
             Dim initial = <Workspace>
                               <Project Language="Visual Basic" AssemblyName="VBAssembly" CommonReferences="true">
                                   <Document FilePath="Program">
@@ -1595,12 +1672,13 @@ Public Class C
     End Sub
 End Class
 "
-            Await TestAsync(initial, expected, compareTokens:=False)
+            Await TestAsync(initial, expected, testHost)
         End Function
 
         <WorkItem(1064815, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1064815")>
-        <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestConditionalAccessExtensionMethod2() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestConditionalAccessExtensionMethod2(testHost As TestHost) As Task
             Dim initial = <Workspace>
                               <Project Language="Visual Basic" AssemblyName="VBAssembly" CommonReferences="true">
                                   <Document FilePath="Program">
@@ -1648,11 +1726,12 @@ Public Class C
     End Class
 End Class
 "
-            Await TestAsync(initial, expected, compareTokens:=False)
+            Await TestAsync(initial, expected, testHost)
         End Function
 
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingInDirective() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddUsingInDirective(testHost As TestHost) As Task
             Await TestAsync(
 "#Const Debug
 Imports System
@@ -1665,7 +1744,7 @@ Module Program
         Dim a = [|File|].OpenRead("""")
     End Sub
 End Module",
-"#Const Debug
+                "#Const Debug
 Imports System
 Imports System.Collections.Generic
 Imports System.IO
@@ -1676,12 +1755,12 @@ Module Program
     Sub Main(args As String())
         Dim a = File.OpenRead("""")
     End Sub
-End Module",
-compareTokens:=False)
+End Module", testHost)
         End Function
 
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingInDirective2() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddUsingInDirective2(testHost As TestHost) As Task
             Await TestAsync(
 "#Const Debug
 #If Debug Then
@@ -1694,7 +1773,7 @@ Module Program
         Dim a = [|File|].OpenRead("""")
     End Sub
 End Module",
-"#Const Debug
+                "#Const Debug
 #If Debug Then
 Imports System
 #End If
@@ -1705,12 +1784,12 @@ Module Program
     Sub Main(args As String())
         Dim a = File.OpenRead("""")
     End Sub
-End Module",
-compareTokens:=False)
+End Module", testHost)
         End Function
 
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingInDirective3() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestAddUsingInDirective3(testHost As TestHost) As Task
             Await TestAsync(
 "#Const Debug
 #If Debug Then
@@ -1723,7 +1802,7 @@ Module Program
         Dim a = [|File|].OpenRead("""")
     End Sub
 End Module",
-"#Const Debug
+                "#Const Debug
 #If Debug Then
 Imports System
 Imports System.Collections.Generic
@@ -1734,12 +1813,12 @@ Module Program
     Sub Main(args As String())
         Dim a = File.OpenRead("""")
     End Sub
-End Module",
-compareTokens:=False)
+End Module", testHost)
         End Function
 
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestInaccessibleExtensionMethod() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestInaccessibleExtensionMethod(testHost As TestHost) As Task
             Dim initial = <Workspace>
                               <Project Language="Visual Basic" AssemblyName="lib" CommonReferences="true">
                                   <Document FilePath="Extension">
@@ -1780,11 +1859,12 @@ Module Module1
 
 End Module
 "
-            Await TestAsync(initial, expected, compareTokens:=False)
+            Await TestAsync(initial, expected, testHost)
         End Function
 
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestInaccessibleExtensionMethod2() As Task
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestInaccessibleExtensionMethod2(testHost As TestHost) As Task
             Dim initial = <Workspace>
                               <Project Language="Visual Basic" AssemblyName="lib" CommonReferences="true">
                                   <Document FilePath="Extension">
@@ -1814,11 +1894,11 @@ End Module
                                       </Document>
                               </Project>
                           </Workspace>.ToString
-            Await TestMissingAsync(initial)
+            Await TestMissingInRegularAndScriptAsync(initial)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod() As Task
             Await TestAsync(
 "Imports System
@@ -1842,6 +1922,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -1860,7 +1941,7 @@ parseOptions:=Nothing)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod2() As Task
             Await TestAsync(
 "Imports System
@@ -1884,6 +1965,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -1902,7 +1984,7 @@ parseOptions:=Nothing)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod3() As Task
             Await TestAsync(
 "Imports System
@@ -1926,6 +2008,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -1944,7 +2027,7 @@ parseOptions:=Nothing)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod4() As Task
             Await TestAsync(
 "Imports System
@@ -1968,6 +2051,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -1986,7 +2070,7 @@ parseOptions:=Nothing)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod5() As Task
             Await TestAsync(
 "Imports System
@@ -2010,6 +2094,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -2028,7 +2113,7 @@ parseOptions:=Nothing)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod6() As Task
             Await TestAsync(
 "Imports System
@@ -2059,6 +2144,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -2084,7 +2170,7 @@ parseOptions:=Nothing)
         End Function
 
         <WorkItem(269, "https://github.com/dotnet/roslyn/issues/269")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
+        <Fact>
         Public Async Function TestAddImportForAddExtentionMethod7() As Task
             Await TestAsync(
 "Imports System
@@ -2115,6 +2201,7 @@ End Namespace",
 Imports System.Collections
 Imports System.Runtime.CompilerServices
 Imports Ext2
+
 Class X
     Implements IEnumerable
     Public Function GetEnumerator() As IEnumerator Implements IEnumerable.GetEnumerator
@@ -2140,9 +2227,10 @@ index:=1,
 parseOptions:=Nothing)
         End Function
 
+        <Theory>
+        <CombinatorialData>
         <WorkItem(935, "https://github.com/dotnet/roslyn/issues/935")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingWithOtherExtensionsInScope() As Task
+        Public Async Function TestAddUsingWithOtherExtensionsInScope(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Linq
 Imports System.Runtime.CompilerServices
@@ -2159,9 +2247,10 @@ Namespace X
         End Function
     End Module
 End Namespace",
-"Imports System.Linq
+                "Imports System.Linq
 Imports System.Runtime.CompilerServices
 Imports X
+
 Module Program
     Sub Main(args As String())
         Dim i = 0.All()
@@ -2174,12 +2263,13 @@ Namespace X
             Return a
         End Function
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
+        <Theory>
+        <CombinatorialData>
         <WorkItem(935, "https://github.com/dotnet/roslyn/issues/935")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingWithOtherExtensionsInScope2() As Task
+        Public Async Function TestAddUsingWithOtherExtensionsInScope2(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Linq
 Imports System.Runtime.CompilerServices
@@ -2197,9 +2287,10 @@ Namespace X
         End Function
     End Module
 End Namespace",
-"Imports System.Linq
+                "Imports System.Linq
 Imports System.Runtime.CompilerServices
 Imports X
+
 Module Program
     Sub Main(args As String())
         Dim a = New Integer?
@@ -2213,12 +2304,13 @@ Namespace X
             Return 0
         End Function
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
+        <Theory>
+        <CombinatorialData>
         <WorkItem(562, "https://github.com/dotnet/roslyn/issues/562")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingWithOtherExtensionsInScope3() As Task
+        Public Async Function TestAddUsingWithOtherExtensionsInScope3(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Runtime.CompilerServices 
 Imports X 
@@ -2244,9 +2336,10 @@ Namespace Y
         End Function 
     End Module 
 End Namespace",
-"Imports System.Runtime.CompilerServices
+                "Imports System.Runtime.CompilerServices
 Imports X
 Imports Y
+
 Module Program
     Sub Main(args As String())
         Dim a = 0
@@ -2268,12 +2361,13 @@ Namespace Y
             Return a
         End Function
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
+        <Theory>
+        <CombinatorialData>
         <WorkItem(562, "https://github.com/dotnet/roslyn/issues/562")>
-        <Fact(), Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-        Public Async Function TestAddUsingWithOtherExtensionsInScope4() As Task
+        Public Async Function TestAddUsingWithOtherExtensionsInScope4(testHost As TestHost) As Task
             Await TestAsync(
 "Imports System.Runtime.CompilerServices
 Imports X
@@ -2299,9 +2393,10 @@ Namespace Y
         End Function
     End Module
 End Namespace",
-"Imports System.Runtime.CompilerServices
+                "Imports System.Runtime.CompilerServices
 Imports X
 Imports Y
+
 Module Program
     Sub Main(args As String())
         Dim a = New Integer?
@@ -2323,153 +2418,67 @@ Namespace Y
             Return 0
         End Function
     End Module
-End Namespace")
+End Namespace", testHost)
         End Function
 
-        Public Class AddImportTestsWithAddImportDiagnosticProvider
-            Inherits AbstractVisualBasicDiagnosticProviderBasedUserDiagnosticTest
+        <Theory>
+        <CombinatorialData>
+        <WorkItem(19796, "https://github.com/dotnet/roslyn/issues/19796")>
+        Public Async Function TestWhenInRome1(testHost As TestHost) As Task
+            Await TestAsync(
+"
+Imports System
+Imports B
 
-            Friend Overrides Function CreateDiagnosticProviderAndFixer(workspace As Workspace) As Tuple(Of DiagnosticAnalyzer, CodeFixProvider)
-                Return Tuple.Create(Of DiagnosticAnalyzer, CodeFixProvider)(
-                    New VisualBasicUnboundIdentifiersDiagnosticAnalyzer(),
-                    New VisualBasicAddImportCodeFixProvider())
-            End Function
-
-            <WorkItem(829970, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/829970")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestUnknownIdentifierInAttributeSyntaxWithoutTarget() As Task
-                Await TestAsync(
-"Class Class1
-    <[|Extension|]>
-End Class",
-"Imports System.Runtime.CompilerServices
 Class Class1
-    <Extension>
-End Class")
-            End Function
-
-            <WorkItem(829970, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/829970")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestUnknownIdentifierGenericName() As Task
-                Await TestAsync(
-"Class C
-    Inherits Attribute
-    Public Sub New(x As System.Type)
-    End Sub
-    <C([|List(Of Integer)|])>
-End Class",
-"Imports System.Collections.Generic
-Class C
-    Inherits Attribute
-    Public Sub New(x As System.Type)
-    End Sub
-    <C(List(Of Integer))>
-End Class")
-            End Function
-
-            <WorkItem(829970, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/829970")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestUnknownIdentifierAddNamespaceImport() As Task
-                Await TestAsync(
-"Class Class1
-    <[|Tasks.Task|]>
-End Class",
-"Imports System.Threading
-Class Class1
-    <Tasks.Task>
-End Class")
-            End Function
-
-            <WorkItem(829970, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/829970")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestUnknownAttributeInModule() As Task
-                Await TestAsync(
-"Module Foo
-    <[|Extension|]>
-End Module",
-"Imports System.Runtime.CompilerServices
-Module Foo
-    <Extension>
-End Module")
-
-                Await TestAsync(
-"Module Foo
-    <[|Extension()|]>
-End Module",
-"Imports System.Runtime.CompilerServices
-Module Foo
-    <Extension()>
-End Module")
-            End Function
-
-            <WorkItem(938296, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/938296")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestNullParentInNode() As Task
-                Await TestMissingAsync(
-"Imports System.Collections.Generic
-
-Class MultiDictionary(Of K, V)
-    Inherits Dictionary(Of K, HashSet(Of V))
-
-    Sub M()
-        Dim hs = New HashSet(Of V)([|Comparer|])
-    End Sub
-End Class")
-            End Function
-
-            <WorkItem(1744, "https://github.com/dotnet/roslyn/issues/1744")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestImportIncompleteSub() As Task
-                Await TestAsync(
-"Class A
-    Dim a As Action = Sub()
-                          Try
-                          Catch ex As [|TestException|]
- End Sub
+    Dim v As [|AType|]
 End Class
-Namespace T
-    Class TestException
-        Inherits Exception
+Namespace A
+    Public Class AType
     End Class
 End Namespace",
-"Imports T
-Class A
-    Dim a As Action = Sub()
-                          Try
-                          Catch ex As TestException
- End Sub
-End Class
-Namespace T
-    Class TestException
-        Inherits Exception
-    End Class
-End Namespace")
-            End Function
+                "
+Imports System
+Imports A
+Imports B
 
-            <WorkItem(1239, "https://github.com/dotnet/roslyn/issues/1239")>
-            <Fact, Trait(Traits.Feature, Traits.Features.CodeActionsAddImport)>
-            Public Async Function TestImportIncompleteSub2() As Task
-                Await TestAsync(
-"Imports System.Linq
-Namespace X
-    Class Test
+Class Class1
+    Dim v As AType
+End Class
+Namespace A
+    Public Class AType
     End Class
-End Namespace
-Class C
-    Sub New()
-        Dim s As Action = Sub()
-                              Dim a = New [|Test|]()",
-"Imports System.Linq
-Imports X
-Namespace X
-    Class Test
+End Namespace", testHost, placeSystemFirst:=False)
+        End Function
+
+        <WorkItem(19796, "https://github.com/dotnet/roslyn/issues/19796")>
+        <Theory>
+        <CombinatorialData>
+        Public Async Function TestWhenInRome2(testHost As TestHost) As Task
+            Await TestAsync(
+"
+Imports B
+Imports System
+
+Class Class1
+    Dim v As [|AType|]
+End Class
+Namespace A
+    Public Class AType
     End Class
-End Namespace
-Class C
-    Sub New()
-        Dim s As Action = Sub()
-                              Dim a = New Test()")
-            End Function
-        End Class
+End Namespace",
+                "
+Imports A
+Imports B
+Imports System
+
+Class Class1
+    Dim v As AType
+End Class
+Namespace A
+    Public Class AType
+    End Class
+End Namespace", testHost, placeSystemFirst:=True)
+        End Function
     End Class
 End Namespace

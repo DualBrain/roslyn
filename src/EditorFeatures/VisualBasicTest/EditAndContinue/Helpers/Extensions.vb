@@ -1,4 +1,6 @@
-' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Runtime.CompilerServices
 Imports Microsoft.CodeAnalysis.Differencing
@@ -14,12 +16,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.EditAndContinue.UnitTests
             source As String,
             description As ActiveStatementsDescription)
 
-            VisualBasicEditAndContinueTestHelpers.Instance.VerifyUnchangedDocument(
+            VisualBasicEditAndContinueTestHelpers.CreateInstance().VerifyUnchangedDocument(
                 ActiveStatementsDescription.ClearTags(source),
-                description.OldSpans,
-                description.OldTrackingSpans,
+                description.OldStatements,
                 description.NewSpans,
-                description.OldRegions,
                 description.NewRegions)
         End Sub
 
@@ -33,7 +33,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.EditAndContinue.UnitTests
         Friend Sub VerifyRudeDiagnostics(editScript As EditScript(Of SyntaxNode),
                                          description As ActiveStatementsDescription,
                                          ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
-            VisualBasicEditAndContinueTestHelpers.Instance.VerifyRudeDiagnostics(editScript, description, expectedDiagnostics)
+            VisualBasicEditAndContinueTestHelpers.CreateInstance().VerifyRudeDiagnostics(editScript, description, expectedDiagnostics)
         End Sub
 
         <Extension>
@@ -41,13 +41,20 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.EditAndContinue.UnitTests
                                    expectedLineEdits As IEnumerable(Of LineChange),
                                    expectedNodeUpdates As IEnumerable(Of String),
                                    ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
-            VisualBasicEditAndContinueTestHelpers.Instance.VerifyLineEdits(editScript, expectedLineEdits, expectedNodeUpdates, expectedDiagnostics)
+            VisualBasicEditAndContinueTestHelpers.CreateInstance().VerifyLineEdits(editScript, expectedLineEdits, expectedNodeUpdates, expectedDiagnostics)
         End Sub
 
         <Extension>
         Friend Sub VerifySemanticDiagnostics(editScript As EditScript(Of SyntaxNode),
                                              ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
-            VerifySemantics(editScript, ActiveStatementsDescription.Empty, Nothing, expectedDiagnostics)
+            VerifySemanticDiagnostics(editScript, Nothing, expectedDiagnostics)
+        End Sub
+
+        <Extension>
+        Friend Sub VerifySemanticDiagnostics(editScript As EditScript(Of SyntaxNode),
+                                             expectedDeclarationError As DiagnosticDescription,
+                                             ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
+            VerifySemantics(editScript, ActiveStatementsDescription.Empty, Nothing, expectedDeclarationError, expectedDiagnostics)
         End Sub
 
         <Extension>
@@ -55,7 +62,16 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.EditAndContinue.UnitTests
                                    activeStatements As ActiveStatementsDescription,
                                    expectedSemanticEdits As SemanticEditDescription(),
                                    ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
-            VerifySemantics(editScript, activeStatements, Nothing, Nothing, expectedSemanticEdits, expectedDiagnostics)
+            VerifySemantics(editScript, activeStatements, Nothing, Nothing, expectedSemanticEdits, Nothing, expectedDiagnostics)
+        End Sub
+
+        <Extension>
+        Friend Sub VerifySemantics(editScript As EditScript(Of SyntaxNode),
+                                   activeStatements As ActiveStatementsDescription,
+                                   expectedSemanticEdits As SemanticEditDescription(),
+                                   expectedDeclarationError As DiagnosticDescription,
+                                   ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
+            VerifySemantics(editScript, activeStatements, Nothing, Nothing, expectedSemanticEdits, expectedDeclarationError, expectedDiagnostics)
         End Sub
 
         <Extension>
@@ -65,12 +81,24 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.EditAndContinue.UnitTests
                                    additionalNewSources As IEnumerable(Of String),
                                    expectedSemanticEdits As SemanticEditDescription(),
                                    ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
-            VisualBasicEditAndContinueTestHelpers.Instance.VerifySemantics(
+            VerifySemantics(editScript, activeStatements, additionalOldSources, additionalNewSources, expectedSemanticEdits, Nothing, expectedDiagnostics)
+        End Sub
+
+        <Extension>
+        Friend Sub VerifySemantics(editScript As EditScript(Of SyntaxNode),
+                                   activeStatements As ActiveStatementsDescription,
+                                   additionalOldSources As IEnumerable(Of String),
+                                   additionalNewSources As IEnumerable(Of String),
+                                   expectedSemanticEdits As SemanticEditDescription(),
+                                   expectedDeclarationError As DiagnosticDescription,
+                                   ParamArray expectedDiagnostics As RudeEditDiagnosticDescription())
+            VisualBasicEditAndContinueTestHelpers.CreateInstance().VerifySemantics(
                 editScript,
                 activeStatements,
                 additionalOldSources,
                 additionalNewSources,
                 expectedSemanticEdits,
+                expectedDeclarationError,
                 expectedDiagnostics)
         End Sub
     End Module

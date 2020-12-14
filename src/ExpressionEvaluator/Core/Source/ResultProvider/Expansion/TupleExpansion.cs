@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using Microsoft.VisualStudio.Debugger.Clr;
 using Microsoft.VisualStudio.Debugger.ComponentInterfaces;
@@ -99,7 +103,12 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 var parentRuntimeType = parent.Value.Type;
                 if (!parent.DeclaredTypeAndInfo.Type.Equals(parentRuntimeType.GetLmrType()))
                 {
-                    parentFullName = fullNameProvider.GetClrCastExpression(inspectionContext, parentFullName, parentRuntimeType, customTypeInfo: null, parenthesizeArgument: false, parenthesizeEntireExpression: true);
+                    parentFullName = fullNameProvider.GetClrCastExpression(
+                        inspectionContext,
+                        parentFullName,
+                        parentRuntimeType,
+                        customTypeInfo: null,
+                        castExpressionOptions: DkmClrCastExpressionOptions.ParenthesizeEntireExpression);
                 }
             }
 
@@ -164,7 +173,10 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 formatSpecifiers: formatSpecifiers,
                 category: DkmEvaluationResultCategory.Other,
                 flags: flags,
-                evalFlags: DkmEvaluationFlags.None);
+                evalFlags: DkmEvaluationFlags.None,
+                canFavorite: false,
+                isFavorite: false,
+                supportsFavorites: true);
         }
 
         private static DkmClrValue GetValueAndFullName(
@@ -192,11 +204,11 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 fullNameProvider.GetClrMemberName(
                     inspectionContext,
                     parentFullName,
-                    declaringType: field.DeclaringTypeAndInfo.ClrType,
-                    declaringTypeInfo: null,
+                    clrType: field.DeclaringTypeAndInfo.ClrType,
+                    customTypeInfo: null,
                     memberName: fieldName,
-                    memberAccessRequiresExplicitCast: false,
-                    memberIsStatic: false);
+                    requiresExplicitCast: false,
+                    isStatic: false);
             return value.GetFieldValue(fieldName, inspectionContext);
         }
 

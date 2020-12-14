@@ -1,4 +1,8 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
@@ -17,8 +21,8 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             {
                 return l.ToOtherMethod(method, typeMap);
             }
-            var type = typeMap.SubstituteType(local.Type);
-            return new EELocalSymbol(method, local.Locations, local.Name, -1, local.DeclarationKind, type.Type, local.RefKind, local.IsPinned, local.IsCompilerGenerated, local.CanScheduleToStack);
+            var type = typeMap.SubstituteType(local.TypeWithAnnotations);
+            return new EELocalSymbol(method, local.Locations, local.Name, -1, local.DeclarationKind, type, local.RefKind, local.IsPinned, local.IsCompilerGenerated, local.CanScheduleToStack);
         }
     }
 
@@ -43,6 +47,11 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             get { return SynthesizedLocalKind.UserDefined; }
         }
 
+        internal override SyntaxNode ScopeDesignatorOpt
+        {
+            get { return null; }
+        }
+
         internal sealed override LocalSymbol WithSynthesizedLocalKindAndSyntax(SynthesizedLocalKind kind, SyntaxNode syntax)
         {
             throw ExceptionUtilities.Unreachable;
@@ -60,9 +69,9 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 
         internal sealed override DiagnosticInfo GetUseSiteDiagnostic()
         {
-            var type = this.Type;
+            var type = this.TypeWithAnnotations;
             DiagnosticInfo result = null;
-            if (!DeriveUseSiteDiagnosticFromType(ref result, type) && this.ContainingModule.HasUnifiedReferences)
+            if (!DeriveUseSiteDiagnosticFromType(ref result, type, AllowedRequiredModifierType.None) && this.ContainingModule.HasUnifiedReferences)
             {
                 // If the member is in an assembly with unified references, 
                 // we check if its definition depends on a type from a unified reference.
@@ -71,5 +80,17 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             }
             return result;
         }
+
+        /// <summary>
+        /// EE Symbols have no source symbols associated with them.
+        /// They should be safe to escape for evaluation purposes.
+        /// </summary>
+        internal override uint ValEscapeScope => Binder.TopLevelScope;
+
+        /// <summary>
+        /// EE Symbols have no source symbols associated with them.
+        /// They should be safe to escape for evaluation purposes.
+        /// </summary>
+        internal override uint RefEscapeScope => Binder.TopLevelScope;
     }
 }

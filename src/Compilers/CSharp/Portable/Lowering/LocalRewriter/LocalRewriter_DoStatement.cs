@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
@@ -14,8 +16,9 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             Debug.Assert(node != null);
 
-            var rewrittenCondition = (BoundExpression)Visit(node.Condition);
-            var rewrittenBody = (BoundStatement)Visit(node.Body);
+            var rewrittenCondition = VisitExpression(node.Condition);
+            var rewrittenBody = VisitStatement(node.Body);
+            Debug.Assert(rewrittenBody is { });
             var startLabel = new GeneratedLabelSymbol("start");
 
             var syntax = node.Syntax;
@@ -49,11 +52,23 @@ namespace Microsoft.CodeAnalysis.CSharp
             // }
             // break:
 
+            if (node.Locals.IsEmpty)
+            {
+                return BoundStatementList.Synthesized(syntax, node.HasErrors,
+                    new BoundLabelStatement(syntax, startLabel),
+                    rewrittenBody,
+                    new BoundLabelStatement(syntax, node.ContinueLabel),
+                    ifConditionGotoStart,
+                    new BoundLabelStatement(syntax, node.BreakLabel));
+            }
+
             return BoundStatementList.Synthesized(syntax, node.HasErrors,
                 new BoundLabelStatement(syntax, startLabel),
-                rewrittenBody,
-                new BoundLabelStatement(syntax, node.ContinueLabel),
-                ifConditionGotoStart,
+                new BoundBlock(syntax,
+                               node.Locals,
+                               ImmutableArray.Create<BoundStatement>(rewrittenBody,
+                                                                     new BoundLabelStatement(syntax, node.ContinueLabel),
+                                                                     ifConditionGotoStart)),
                 new BoundLabelStatement(syntax, node.BreakLabel));
         }
     }

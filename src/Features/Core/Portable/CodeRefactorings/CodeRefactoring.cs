@@ -1,9 +1,13 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
-using System.Collections.Generic;
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.CodeActions;
-using Roslyn.Utilities;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.CodeRefactorings
 {
@@ -15,16 +19,20 @@ namespace Microsoft.CodeAnalysis.CodeRefactorings
         public CodeRefactoringProvider Provider { get; }
 
         /// <summary>
-        /// List of possible actions that can be used to transform the code.
+        /// List of tuples of possible actions that can be used to transform the code the TextSpan within the original document they're applicable to.
         /// </summary>
-        public IReadOnlyList<CodeAction> Actions { get; }
+        /// <remarks>
+        /// applicableToSpan should represent a logical section within the original document that the action is 
+        /// applicable to. It doesn't have to precisely represent the exact <see cref="TextSpan"/> that will get changed.
+        /// </remarks>
+        public ImmutableArray<(CodeAction action, TextSpan? applicableToSpan)> CodeActions { get; }
 
-        public CodeRefactoring(CodeRefactoringProvider provider, IEnumerable<CodeAction> actions)
+        public CodeRefactoring(CodeRefactoringProvider provider, ImmutableArray<(CodeAction, TextSpan?)> actions)
         {
             Provider = provider;
-            Actions = actions.ToImmutableArrayOrEmpty();
+            CodeActions = actions.NullToEmpty();
 
-            if (Actions.Count == 0)
+            if (CodeActions.IsEmpty)
             {
                 throw new ArgumentException(FeaturesResources.Actions_can_not_be_empty, nameof(actions));
             }

@@ -1,19 +1,21 @@
-// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
-using System.Linq;
+using System.Diagnostics;
 using System.Threading;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Utilities;
-using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.CodeAnalysis.Internal.Log;
 using Microsoft.CodeAnalysis.Simplification;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Simplification
@@ -25,13 +27,20 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
         // 2. Extension method reducer may insert parentheses.  So run it before the parentheses remover.
         private static readonly ImmutableArray<AbstractReducer> s_reducers =
             ImmutableArray.Create<AbstractReducer>(
-                new CSharpCastReducer(),
+                new CSharpVarReducer(),
                 new CSharpNameReducer(),
+                new CSharpNullableAnnotationReducer(),
+                new CSharpCastReducer(),
                 new CSharpExtensionMethodReducer(),
-                new CSharpParenthesesReducer(),
+                new CSharpParenthesizedExpressionReducer(),
+                new CSharpParenthesizedPatternReducer(),
                 new CSharpEscapingReducer(),
-                new CSharpMiscellaneousReducer());
+                new CSharpMiscellaneousReducer(),
+                new CSharpInferredMemberNameReducer(),
+                new CSharpDefaultExpressionReducer());
 
+        [ImportingConstructor]
+        [Obsolete(MefConstruction.ImportingConstructorMessage, error: true)]
         public CSharpSimplificationService() : base(s_reducers)
         {
         }
@@ -67,7 +76,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
             {
                 var rewriter = new Expander(semanticModel, expandInsideNode, false, cancellationToken);
 
-                var rewrittenToken = TryEscapeIdentifierToken(rewriter.VisitToken(token), token.Parent, semanticModel).WithAdditionalAnnotations(Simplifier.Annotation);
+                var rewrittenToken = TryEscapeIdentifierToken(rewriter.VisitToken(token), token.Parent).WithAdditionalAnnotations(Simplifier.Annotation);
                 if (TryAddLeadingElasticTriviaIfNecessary(rewrittenToken, token, out var rewrittenTokenWithElasticTrivia))
                 {
                     return rewrittenTokenWithElasticTrivia;
@@ -77,7 +86,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
             }
         }
 
-        public static SyntaxToken TryEscapeIdentifierToken(SyntaxToken syntaxToken, SyntaxNode parentOfToken, SemanticModel semanticModel)
+        public static SyntaxToken TryEscapeIdentifierToken(SyntaxToken syntaxToken, SyntaxNode parentOfToken)
         {
             // do not escape an already escaped identifier
             if (syntaxToken.IsVerbatimIdentifier())
@@ -86,6 +95,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
             }
 
             if (SyntaxFacts.GetKeywordKind(syntaxToken.ValueText) == SyntaxKind.None && SyntaxFacts.GetContextualKeywordKind(syntaxToken.ValueText) == SyntaxKind.None)
+            {
+                return syntaxToken;
+            }
+
+            if (SyntaxFacts.GetContextualKeywordKind(syntaxToken.ValueText) == SyntaxKind.UnderscoreToken)
             {
                 return syntaxToken;
             }
@@ -128,7 +142,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
 
         private static bool TryAddLeadingElasticTriviaIfNecessary(SyntaxToken token, SyntaxToken originalToken, out SyntaxToken tokenWithLeadingWhitespace)
         {
-            tokenWithLeadingWhitespace = default(SyntaxToken);
+            tokenWithLeadingWhitespace = default;
 
             if (token.HasLeadingTrivia)
             {
@@ -155,34 +169,57 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
         }
 
         protected override ImmutableArray<NodeOrTokenToReduce> GetNodesAndTokensToReduce(SyntaxNode root, Func<SyntaxNodeOrToken, bool> isNodeOrTokenOutsideSimplifySpans)
-        {
-            return NodesAndTokensToReduceComputer.Compute(root, isNodeOrTokenOutsideSimplifySpans);
-        }
+            => NodesAndTokensToReduceComputer.Compute(root, isNodeOrTokenOutsideSimplifySpans);
 
         protected override bool CanNodeBeSimplifiedWithoutSpeculation(SyntaxNode node)
-        {
-            return false;
-        }
+            => false;
 
-        private static readonly string s_CS8019_UnusedUsingDirective = "CS8019";
+        private const string s_CS8019_UnusedUsingDirective = "CS8019";
 
         protected override void GetUnusedNamespaceImports(SemanticModel model, HashSet<SyntaxNode> namespaceImports, CancellationToken cancellationToken)
         {
-            var root = model.SyntaxTree.GetRoot();
+            var root = model.SyntaxTree.GetRoot(cancellationToken);
             var diagnostics = model.GetDiagnostics(cancellationToken: cancellationToken);
 
             foreach (var diagnostic in diagnostics)
             {
                 if (diagnostic.Id == s_CS8019_UnusedUsingDirective)
                 {
-                    var node = root.FindNode(diagnostic.Location.SourceSpan) as UsingDirectiveSyntax;
-
-                    if (node != null)
+                    if (root.FindNode(diagnostic.Location.SourceSpan) is UsingDirectiveSyntax node)
                     {
                         namespaceImports.Add(node);
                     }
                 }
             }
+        }
+
+        // Is the tuple on either side of a deconstruction (top-level or nested)?
+        private static bool IsTupleInDeconstruction(SyntaxNode tuple)
+        {
+            Debug.Assert(tuple.IsKind(SyntaxKind.TupleExpression));
+            var currentTuple = tuple;
+            do
+            {
+                var parent = currentTuple.Parent;
+                if (parent.IsKind(SyntaxKind.SimpleAssignmentExpression))
+                {
+                    return true;
+                }
+
+                if (!parent.IsKind(SyntaxKind.Argument))
+                {
+                    return false;
+                }
+
+                var grandParent = parent.Parent;
+                if (!grandParent.IsKind(SyntaxKind.TupleExpression))
+                {
+                    return false;
+                }
+
+                currentTuple = grandParent;
+            }
+            while (true);
         }
     }
 }

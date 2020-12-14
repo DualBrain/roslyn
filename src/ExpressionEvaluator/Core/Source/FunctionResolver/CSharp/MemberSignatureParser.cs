@@ -1,4 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using Microsoft.CodeAnalysis.ExpressionEvaluator;
 using System;
@@ -41,11 +45,6 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
         }
 
         private Token CurrentToken => _tokens[_tokenIndex];
-
-        private Token PeekToken(int offset)
-        {
-            return _tokens[_tokenIndex + offset];
-        }
 
         private Token EatToken()
         {
@@ -281,11 +280,6 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             }
         }
 
-        private static bool IsKeyword(string text)
-        {
-            return SyntaxFacts.GetKeywordKind(text) != SyntaxKind.None;
-        }
-
         private static SpecialType GetSpecialType(SyntaxKind kind)
         {
             switch (kind)
@@ -326,7 +320,6 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                     return SpecialType.None;
             }
         }
-
 
         private static Exception InvalidSignature()
         {

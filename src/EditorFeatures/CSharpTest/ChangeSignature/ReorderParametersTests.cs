@@ -1,7 +1,12 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable disable
 
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
 using Xunit;
 
@@ -10,13 +15,77 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.ChangeSignature
     public partial class ChangeSignatureTests : AbstractChangeSignatureTests
     {
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
+        public async Task ReorderLocalFunctionParametersAndArguments_OnDeclaration()
+        {
+            var markup = @"
+using System;
+class MyClass
+{
+    public void M()
+    {
+        Goo(1, 2);
+        void $$Goo(int x, string y)
+        {
+        }
+    }
+}";
+            var permutation = new[] { 1, 0 };
+            var updatedCode = @"
+using System;
+class MyClass
+{
+    public void M()
+    {
+        Goo(2, 1);
+        void Goo(string y, int x)
+        {
+        }
+    }
+}";
+
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+        }
+
+        [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
+        public async Task ReorderLocalFunctionParametersAndArguments_OnInvocation()
+        {
+            var markup = @"
+using System;
+class MyClass
+{
+    public void M()
+    {
+        $$Goo(1, null);
+        void Goo(int x, string y)
+        {
+        }
+    }
+}";
+            var permutation = new[] { 1, 0 };
+            var updatedCode = @"
+using System;
+class MyClass
+{
+    public void M()
+    {
+        Goo(null, 1);
+        void Goo(string y, int x)
+        {
+        }
+    }
+}";
+
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+        }
+
+        [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
         public async Task ReorderMethodParameters()
         {
             var markup = @"
 using System;
 class MyClass
 {
-    public void $$Foo(int x, string y)
+    public void $$Goo(int x, string y)
     {
     }
 }";
@@ -25,7 +94,7 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
     }
 }";
@@ -40,9 +109,9 @@ class MyClass
 using System;
 class MyClass
 {
-    public void $$Foo(int x, string y)
+    public void $$Goo(int x, string y)
     {
-        Foo(3, ""hello"");
+        Goo(3, ""hello"");
     }
 }";
             var permutation = new[] { 1, 0 };
@@ -50,9 +119,9 @@ class MyClass
 using System;
 class MyClass
 {
-    public void Foo(string y, int x)
+    public void Goo(string y, int x)
     {
-        Foo(""hello"", 3);
+        Goo(""hello"", 3);
     }
 }";
 
@@ -66,9 +135,9 @@ class MyClass
 using System;
 class MyClass
 {
-    public int $$Foo(int x, string y)
+    public int $$Goo(int x, string y)
     {
-        return Foo(Foo(4, ""inner""), ""outer"");
+        return Goo(Goo(4, ""inner""), ""outer"");
     }
 }";
             var permutation = new[] { 1, 0 };
@@ -76,9 +145,9 @@ class MyClass
 using System;
 class MyClass
 {
-    public int Foo(string y, int x)
+    public int Goo(string y, int x)
     {
-        return Foo(""outer"", Foo(""inner"", 4));
+        return Goo(""outer"", Goo(""inner"", 4));
     }
 }";
 
@@ -135,6 +204,57 @@ class MyClass
             await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
         }
 
+        [WorkItem(44126, "https://github.com/dotnet/roslyn/issues/44126")]
+        [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
+        public async Task ReorderConstructorParametersAndArguments_ImplicitObjectCreation()
+        {
+            var markup = @"
+using System;
+
+class MyClass2 : MyClass
+{
+    public MyClass2() : base(5, ""test2"")
+    {
+    }
+}
+
+class MyClass
+{
+    public MyClass() : this(2, ""test"")
+    {
+    }
+
+    public MyClass(int x, string y)
+    {
+        MyClass t = new$$(x, y);
+    }
+}";
+            var permutation = new[] { 1, 0 };
+            var updatedCode = @"
+using System;
+
+class MyClass2 : MyClass
+{
+    public MyClass2() : base(""test2"", 5)
+    {
+    }
+}
+
+class MyClass
+{
+    public MyClass() : this(""test"", 2)
+    {
+    }
+
+    public MyClass(string y, int x)
+    {
+        MyClass t = new(y, x);
+    }
+}";
+
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+        }
+
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
         public async Task ReorderAttributeConstructorParametersAndArguments()
         {
@@ -181,7 +301,7 @@ public class C
 
 public static class CExt
 {
-    public static void $$M(this C foo, int x, int y, string a = ""test_a"", string b = ""test_b"", string c = ""test_c"")
+    public static void M(this $$C goo, int x, int y, string a = ""test_a"", string b = ""test_b"", string c = ""test_c"")
     { }
 }";
             var permutation = new[] { 0, 2, 1, 5, 4, 3 };
@@ -196,11 +316,14 @@ public class C
 
 public static class CExt
 {
-    public static void M(this C foo, int y, int x, string c = ""test_c"", string b = ""test_b"", string a = ""test_a"")
+    public static void M(this C goo, int y, int x, string c = ""test_c"", string b = ""test_b"", string a = ""test_a"")
     { }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            // Although the `ParameterConfig` has 0 for the `SelectedIndex`, the UI dialog will make an adjustment
+            // and select parameter `y` instead because the `this` parameter cannot be moved or removed.
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -217,7 +340,7 @@ public class C
 
 public static class CExt
 {
-    public static void $$M(this C foo, int x, int y, string a = ""test_a"", string b = ""test_b"", string c = ""test_c"")
+    public static void M(this C goo, int x$$, int y, string a = ""test_a"", string b = ""test_b"", string c = ""test_c"")
     { }
 }";
             var permutation = new[] { 0, 2, 1, 5, 4, 3 };
@@ -232,11 +355,12 @@ public class C
 
 public static class CExt
 {
-    public static void M(this C foo, int y, int x, string c = ""test_c"", string b = ""test_b"", string a = ""test_a"")
+    public static void M(this C goo, int y, int x, string c = ""test_c"", string b = ""test_b"", string a = ""test_a"")
     { }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 1);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -304,7 +428,7 @@ public class C
 
 public static class CExt
 {
-    public static void $$M(this C foo, int x, int y, string a = ""test_a"", string b = ""test_b"", string c = ""test_c"", params int[] p)
+    public static void $$M(this C goo, int x, int y, string a = ""test_a"", string b = ""test_b"", string c = ""test_c"", params int[] p)
     { }
 }";
             var permutation = new[] { 0, 2, 1, 5, 4, 3, 6 };
@@ -322,11 +446,12 @@ public class C
 
 public static class CExt
 {
-    public static void M(this C foo, int y, int x, string c = ""test_c"", string b = ""test_b"", string a = ""test_a"", params int[] p)
+    public static void M(this C goo, int y, int x, string c = ""test_c"", string b = ""test_b"", string a = ""test_a"", params int[] p)
     { }
 }";
 
-            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
+            await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation,
+                expectedUpdatedInvocationDocumentCode: updatedCode, expectedSelectedIndex: 0);
         }
 
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
@@ -366,7 +491,7 @@ class Program
 
             await TestChangeSignatureViaCommandAsync(LanguageNames.CSharp, markup, updatedSignature: permutation, expectedUpdatedInvocationDocumentCode: updatedCode);
         }
-        
+
         [WpfFact, Trait(Traits.Feature, Traits.Features.ChangeSignature)]
         public async Task ReorderParamTagsInDocComments_SingleLineDocComments_OnIndividualLines()
         {
@@ -376,7 +501,7 @@ public class C
     /// <param name=""a""></param>
     /// <param name=""b""></param>
     /// <param name=""c""></param>
-    void $$Foo(int a, int b, int c)
+    void $$Goo(int a, int b, int c)
     {
 
     }
@@ -388,7 +513,7 @@ public class C
     /// <param name=""c""></param>
     /// <param name=""b""></param>
     /// <param name=""a""></param>
-    void Foo(int c, int b, int a)
+    void Goo(int c, int b, int a)
     {
 
     }
@@ -404,7 +529,7 @@ public class C
 public class C
 {
     /// <param name=""a"">a is fun</param><param name=""b"">b is fun</param><param name=""c"">c is fun</param>
-    void $$Foo(int a, int b, int c)
+    void $$Goo(int a, int b, int c)
     {
 
     }
@@ -414,7 +539,7 @@ public class C
 public class C
 {
     /// <param name=""c"">c is fun</param><param name=""b"">b is fun</param><param name=""a"">a is fun</param>
-    void Foo(int c, int b, int a)
+    void Goo(int c, int b, int a)
     {
 
     }
@@ -435,7 +560,7 @@ public class C
     /// <param name=""e"">Comments spread
     /// over several
     /// lines</param><param name=""f""></param>
-    void $$Foo(int a, int b, int c, int d, int e, int f)
+    void $$Goo(int a, int b, int c, int d, int e, int f)
     {
 
     }
@@ -450,7 +575,7 @@ public class C
     /// <param name=""d""></param>
     /// <param name=""c""></param>
     /// <param name=""b""></param><param name=""a""></param>
-    void Foo(int f, int e, int d, int c, int b, int a)
+    void Goo(int f, int e, int d, int c, int b, int a)
     {
 
     }
@@ -468,7 +593,7 @@ public class C
     /// <param name=""a""></param><param name=""b""></param>
     // Why is there a regular comment here?
     /// <param name=""c""></param><param name=""d""></param><param name=""e""></param>
-    void $$Foo(int a, int b, int c, int d, int e)
+    void $$Goo(int a, int b, int c, int d, int e)
     {
 
     }
@@ -480,7 +605,7 @@ public class C
     /// <param name=""e""></param><param name=""d""></param>
     // Why is there a regular comment here?
     /// <param name=""c""></param><param name=""b""></param><param name=""a""></param>
-    void Foo(int e, int d, int c, int b, int a)
+    void Goo(int e, int d, int c, int b, int a)
     {
 
     }
@@ -554,7 +679,7 @@ public class C
     /// <param name=""a""></param>
     /// <param name=""c""></param>
     /// <param name=""b""></param>
-    void $$Foo(int a, int b, int c)
+    void $$Goo(int a, int b, int c)
     {
 
     }
@@ -566,7 +691,7 @@ public class C
     /// <param name=""a""></param>
     /// <param name=""c""></param>
     /// <param name=""b""></param>
-    void Foo(int c, int b, int a)
+    void Goo(int c, int b, int a)
     {
 
     }
@@ -583,7 +708,7 @@ public class C
     /// <param name=""a2""></param>
     /// <param name=""b""></param>
     /// <param name=""c""></param>
-    void $$Foo(int a, int b, int c)
+    void $$Goo(int a, int b, int c)
     {
 
     }
@@ -595,7 +720,7 @@ public class C
     /// <param name=""a2""></param>
     /// <param name=""b""></param>
     /// <param name=""c""></param>
-    void Foo(int c, int b, int a)
+    void Goo(int c, int b, int a)
     {
 
     }
@@ -611,7 +736,7 @@ public class C
 {
     /// <param name=""a""></param>
     /// <param name=""c""></param>
-    void $$Foo(int a, int b, int c)
+    void $$Goo(int a, int b, int c)
     {
 
     }
@@ -622,7 +747,7 @@ public class C
 {
     /// <param name=""a""></param>
     /// <param name=""c""></param>
-    void Foo(int c, int b, int a)
+    void Goo(int c, int b, int a)
     {
 
     }
@@ -640,7 +765,7 @@ public class C
     /// <param name=""b""></param>
     /// <param name=""c""></param>
     /// <param name=""d""></param>
-    void $$Foo(int a, int b, int c)
+    void $$Goo(int a, int b, int c)
     {
 
     }
@@ -653,7 +778,7 @@ public class C
     /// <param name=""b""></param>
     /// <param name=""c""></param>
     /// <param name=""d""></param>
-    void Foo(int c, int b, int a)
+    void Goo(int c, int b, int a)
     {
 
     }
@@ -738,7 +863,7 @@ class C
 class C
 {
     /// <summary>
-    /// See <see cref=""M( string,int)""/> and <see cref=""M""/>
+    /// See <see cref=""M(string, int)""/> and <see cref=""M""/>
     /// </summary>
     void M(string y, int x)
     { }

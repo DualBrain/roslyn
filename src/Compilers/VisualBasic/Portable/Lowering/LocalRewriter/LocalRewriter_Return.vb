@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
 Imports System.Diagnostics
@@ -23,7 +25,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             ' Instrument synthesized returns when expressions are not compiler generated.
             If Instrument(node, rewritten) OrElse (node.ExpressionOpt IsNot Nothing AndAlso Instrument(node.ExpressionOpt)) Then
-                rewritten = _instrumenter.InstrumentReturnStatement(node, rewritten)
+                rewritten = _instrumenterOpt.InstrumentReturnStatement(node, rewritten)
             End If
 
             Return rewritten
