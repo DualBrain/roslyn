@@ -4,7 +4,6 @@
 
 Imports System.Runtime.CompilerServices
 Imports Microsoft.CodeAnalysis
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic
@@ -149,7 +148,6 @@ End Class
             Assert.Equal(0, u_c4.GetTypeMembers("C5", 1).Length)
             Assert.Same(u_c4, u_c4.ConstructedFrom)
             Assert.Same(u_c4, u_c4.ConstructUnboundGenericType())
-
 
             Dim u_c5 = c5.ConstructUnboundGenericType()
             Assert.True(u_c5.IsUnboundGenericType)

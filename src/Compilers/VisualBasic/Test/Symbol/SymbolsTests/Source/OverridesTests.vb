@@ -5,7 +5,6 @@
 Imports System.Globalization
 Imports System.Text
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -129,7 +128,6 @@ End Module
             Dim globalNS = comp.GlobalNamespace
             Dim clsBase = DirectCast(globalNS.GetMembers("Base").Single(), NamedTypeSymbol)
             Dim clsDerived = DirectCast(globalNS.GetMembers("Derived").Single(), NamedTypeSymbol)
-
 
             Dim o1Base = DirectCast(clsBase.GetMembers("O1").Single(), MethodSymbol)
             Dim o1Derived = DirectCast(clsDerived.GetMembers("O1").Single(), MethodSymbol)
@@ -451,7 +449,6 @@ BC40014: sub 'get_Z' conflicts with a member implicitly declared for property 'Z
 </expected>)
         End Sub
 
-
         <Fact>
         Public Sub NonAccessorHidingAccessor()
             Dim comp = CreateCompilationWithMscorlib40AndVBRuntime(
@@ -639,7 +636,6 @@ BC31413: 'Public Property Set Y(AutoPropertyValue As Integer)', implicitly decla
 </expected>)
         End Sub
 
-
         <Fact>
         Public Sub NoOverride()
             Dim comp = CreateCompilationWithMscorlib40AndVBRuntime(
@@ -701,7 +697,6 @@ BC30284: function 'f' cannot be declared 'Overrides' because it does not overrid
                                   ~
 </expected>)
         End Sub
-
 
         <Fact>
         Public Sub AmbiguousOverride()
@@ -1667,7 +1662,6 @@ BC30906: 'Public Overrides Sub f(x As String())' cannot override 'Public Overrid
                              ~
     </expected>)
         End Sub
-
 
         <WorkItem(529018, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529018")>
         <Fact()>

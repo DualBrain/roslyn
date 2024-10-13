@@ -6,7 +6,6 @@ Imports System.Collections.Immutable
 Imports System.Globalization
 Imports System.Text
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -586,7 +585,6 @@ End Module
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator IsTrue(x As A1) As Boolean"),
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator -(x As A1) As A1"),
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator +(x As A1) As A1")}
-
 
             Dim a1 = compilation.GetTypeByMetadataName("A1")
             Dim members As ImmutableArray(Of Symbol) = a1.GetMembers()
@@ -1184,7 +1182,6 @@ End Module
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator -(x As A1) As A1"),
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator +(x As A1) As A1")}
 
-
             Dim a1 = compilation.GetTypeByMetadataName("A1")
             Dim members As ImmutableArray(Of Symbol) = a1.GetMembers()
 
@@ -1369,7 +1366,6 @@ Module Program
 End Module
     </file>
 </compilation>, customIL.Value, includeVbRuntime:=True, options:=TestOptions.ReleaseExe)
-
 
             Dim a1 = compilation.GetTypeByMetadataName("A1")
             Dim members As ImmutableArray(Of Symbol) = a1.GetMembers()
@@ -1948,7 +1944,6 @@ End Module
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator -(x As A1) As A1"),
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator +(x As A1) As A1")}
 
-
             Dim a1 = compilation.GetTypeByMetadataName("A1")
             Dim members As ImmutableArray(Of Symbol) = a1.GetMembers()
 
@@ -2082,7 +2077,6 @@ End Module
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator <<(x As A1, y As Integer) As A1"),
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator Not(x As A1) As A1"),
                      New BaseLine(MethodKind.UserDefinedOperator, "Public Shared Overloads Operator >>(x As A1, y As Integer) As A1")}
-
 
             Dim a1 = compilation.GetTypeByMetadataName("A1")
             Dim members As ImmutableArray(Of Symbol) = a1.GetMembers()

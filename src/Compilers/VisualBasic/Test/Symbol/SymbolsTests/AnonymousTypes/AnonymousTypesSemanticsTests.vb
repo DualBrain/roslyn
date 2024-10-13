@@ -5,16 +5,15 @@
 Imports System.Collections.Immutable
 Imports System.Runtime.CompilerServices
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols.Metadata.PE
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
-
 Imports Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols
 Imports Roslyn.Test.Utilities
+Imports Basic.Reference.Assemblies
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.ExtensionMethods
 
@@ -145,7 +144,7 @@ End Module
             '                                  AnonymousObjectCreationExpression in the new { } declaration.
             Dim symbol = model.GetDeclaredSymbol(anonObjectCreation)
             Assert.NotNull(symbol)
-            Assert.Equal(Of ISymbol)(localType, symbol)
+            AssertEx.Equal(Of ISymbol)(localType, symbol)
             Assert.Same(anonObjectCreation, symbol.DeclaringSyntaxReferences(0).GetSyntax())
 
             ' Locations: Return the Span of that particular 
@@ -177,7 +176,7 @@ End Module
                     ' SemanticModel.GetDeclaredSymbol: Return this symbol when applied to its new { } 
                     '                                  declaration's AnonymousObjectMemberDeclarator.
                     Dim propSymbol = model.GetDeclaredSymbol(propertyInitializer)
-                    Assert.Equal(Of ISymbol)(member, propSymbol)
+                    AssertEx.Equal(Of ISymbol)(member, propSymbol)
                     Assert.Same(propertyInitializer, propSymbol.DeclaringSyntaxReferences(0).GetSyntax())
 
                     ' Locations: Return the Span of that particular 
@@ -1969,7 +1968,7 @@ End Module
             Dim spans As New List(Of TextSpan)
             ExtractTextIntervals(text, spans)
 
-            Dim compilation = CompilationUtils.CreateCompilationWithMscorlib40AndReferences(text, {TestMetadata.Net40.System, TestMetadata.Net40.SystemCore, TestMetadata.Net40.MicrosoftVisualBasic})
+            Dim compilation = CompilationUtils.CreateCompilationWithMscorlib40AndReferences(text, {Net40.References.System, Net40.References.SystemCore, Net40.References.MicrosoftVisualBasic})
             If errors Is Nothing Then
                 CompilationUtils.AssertNoErrors(compilation)
             Else
@@ -2093,5 +2092,4 @@ End Module
 #End Region
 
 End Namespace
-
 

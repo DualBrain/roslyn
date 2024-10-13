@@ -9,6 +9,8 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Formatting;
+using Microsoft.CodeAnalysis.Options;
 using Microsoft.VisualStudio.LanguageServices.Implementation.Interop;
 using Microsoft.VisualStudio.LanguageServices.Implementation.Utilities;
 
@@ -35,9 +37,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
         }
 
         internal FileCodeModel FileCodeModel
-        {
-            get { return _fileCodeModel.Object; }
-        }
+            => _fileCodeModel.Object;
 
         protected SyntaxTree GetSyntaxTree()
             => FileCodeModel.GetSyntaxTree();
@@ -139,11 +139,14 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
             get { return GetCollection(); }
         }
 
+        private LineFormattingOptions GetLineFormattingOptions()
+            => State.ThreadingContext.JoinableTaskFactory.Run(() => GetDocument().GetLineFormattingOptionsAsync(CancellationToken.None).AsTask());
+
         public EnvDTE.TextPoint StartPoint
         {
             get
             {
-                var options = GetDocument().GetOptionsAsync(CancellationToken.None).WaitAndGetResult_CodeModel(CancellationToken.None);
+                var options = GetLineFormattingOptions();
                 var point = CodeModelService.GetStartPoint(LookupNode(), options);
                 if (point == null)
                 {
@@ -158,7 +161,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
         {
             get
             {
-                var options = GetDocument().GetOptionsAsync(CancellationToken.None).WaitAndGetResult_CodeModel(CancellationToken.None);
+                var options = GetLineFormattingOptions();
                 var point = CodeModelService.GetEndPoint(LookupNode(), options);
                 if (point == null)
                 {
@@ -171,7 +174,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
         public virtual EnvDTE.TextPoint GetStartPoint(EnvDTE.vsCMPart part)
         {
-            var options = GetDocument().GetOptionsAsync(CancellationToken.None).WaitAndGetResult_CodeModel(CancellationToken.None);
+            var options = GetLineFormattingOptions();
             var point = CodeModelService.GetStartPoint(LookupNode(), options, part);
             if (point == null)
             {
@@ -183,7 +186,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
         public virtual EnvDTE.TextPoint GetEndPoint(EnvDTE.vsCMPart part)
         {
-            var options = GetDocument().GetOptionsAsync(CancellationToken.None).WaitAndGetResult_CodeModel(CancellationToken.None);
+            var options = GetLineFormattingOptions();
             var point = CodeModelService.GetEndPoint(LookupNode(), options, part);
             if (point == null)
             {

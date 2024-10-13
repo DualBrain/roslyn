@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.2" xsi:schemaLocation="urn:oasis:names:tc:xliff:document:1.2 xliff-core-1.2-transitional.xsd">
-  <file datatype="xml" source-language="en" target-language="zh-HANT" original="../CompilerExtensionsResources.resx">
+  <file datatype="xml" source-language="en" target-language="zh-Hant" original="../CompilerExtensionsResources.resx">
     <body>
       <trans-unit id="Absolute_path_expected">
         <source>Absolute path expected.</source>
@@ -11,16 +11,6 @@
         <source>Abstract Method</source>
         <target state="translated">抽象方法</target>
         <note>{locked: abstract}{locked: method} These are keywords (unless the order of words or capitalization should be handled differently)</note>
-      </trans-unit>
-      <trans-unit id="An_element_with_the_same_key_but_a_different_value_already_exists">
-        <source>An element with the same key but a different value already exists.</source>
-        <target state="translated">已經有相同索引鍵但不同值的項目。</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="ArgumentException_OtherNotArrayOfCorrectLength">
-        <source>Object is not a array with the same number of elements as the array to compare it to.</source>
-        <target state="translated">物件不是一個與相比較陣列具有相同元素數目的陣列。</target>
-        <note />
       </trans-unit>
       <trans-unit id="Begins_with_I">
         <source>Begins with I</source>
@@ -60,6 +50,11 @@
       <trans-unit id="Field_preferences">
         <source>Field preferences</source>
         <target state="translated">欄位喜好設定</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="Instantiated_parts_threw_exceptions_from_IDisposable_Dispose">
+        <source>Instantiated part(s) threw exception(s) from IDisposable.Dispose().</source>
+        <target state="translated">從 IDisposable.Dispose() 執行個體化的部分擲回的例外狀況。</target>
         <note />
       </trans-unit>
       <trans-unit id="Interface">
@@ -102,15 +97,15 @@
         <target state="translated">命名樣式</target>
         <note />
       </trans-unit>
+      <trans-unit id="New_line_preferences">
+        <source>New line preferences</source>
+        <target state="translated">新行喜好設定</target>
+        <note />
+      </trans-unit>
       <trans-unit id="Non_Field_Members">
         <source>Non-Field Members</source>
         <target state="translated">非欄位成員</target>
         <note>{locked:field}</note>
-      </trans-unit>
-      <trans-unit id="NotSupported_FixedSizeCollection">
-        <source>Collection was of a fixed size.</source>
-        <target state="translated">集合屬於固定大小。</target>
-        <note />
       </trans-unit>
       <trans-unit id="Organize_usings">
         <source>Organize usings</source>
@@ -166,11 +161,6 @@
         <source>Public or Protected Field</source>
         <target state="translated">公用或受保護欄位</target>
         <note>{locked: public}{locked: protected}{locked:field}</note>
-      </trans-unit>
-      <trans-unit id="Segment_size_must_be_power_of_2_greater_than_1">
-        <source>Segment size must be power of 2 greater than 1</source>
-        <target state="translated">區段大小必須是 2 的乘冪且大於 1</target>
-        <note />
       </trans-unit>
       <trans-unit id="Specified_sequence_has_duplicate_items">
         <source>Specified sequence has duplicate items</source>

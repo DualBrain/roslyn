@@ -13,16 +13,18 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using Microsoft.CodeAnalysis.Options;
+using Microsoft.VisualStudio.LanguageServices.Implementation.Options.Converters;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
 {
-    [System.ComponentModel.DesignerCategory("code")] // this must be fully qualified
+    [DesignerCategory("code")] // this must be fully qualified
     public abstract class AbstractOptionPageControl : UserControl
     {
         internal readonly OptionStore OptionStore;
-        private readonly List<BindingExpressionBase> _bindingExpressions = new List<BindingExpressionBase>();
+        private readonly List<BindingExpressionBase> _bindingExpressions = [];
+        private readonly List<OptionPageSearchHandler> _searchHandlers = [];
 
-        public AbstractOptionPageControl(OptionStore optionStore)
+        private protected AbstractOptionPageControl(OptionStore optionStore)
         {
             InitializeStyles();
 
@@ -72,6 +74,24 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
                 UpdateSourceTrigger = UpdateSourceTrigger.Default
             };
 
+            AddSearchHandler(checkbox);
+
+            var bindingExpression = checkbox.SetBinding(CheckBox.IsCheckedProperty, binding);
+            _bindingExpressions.Add(bindingExpression);
+        }
+
+        private protected void BindToOption(CheckBox checkbox, Option2<bool?> nullableOptionKey, Func<bool> onNullValue)
+        {
+            var binding = new Binding()
+            {
+                Source = new OptionBinding<bool?>(OptionStore, nullableOptionKey),
+                Path = new PropertyPath("Value"),
+                UpdateSourceTrigger = UpdateSourceTrigger.Default,
+                Converter = new NullableBoolOptionConverter(onNullValue)
+            };
+
+            AddSearchHandler(checkbox);
+
             var bindingExpression = checkbox.SetBinding(CheckBox.IsCheckedProperty, binding);
             _bindingExpressions.Add(bindingExpression);
         }
@@ -84,6 +104,24 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
                 Path = new PropertyPath("Value"),
                 UpdateSourceTrigger = UpdateSourceTrigger.Default
             };
+
+            AddSearchHandler(checkbox);
+
+            var bindingExpression = checkbox.SetBinding(CheckBox.IsCheckedProperty, binding);
+            _bindingExpressions.Add(bindingExpression);
+        }
+
+        private protected void BindToOption(CheckBox checkbox, PerLanguageOption2<bool?> nullableOptionKey, string languageName, Func<bool> onNullValue)
+        {
+            var binding = new Binding()
+            {
+                Source = new PerLanguageOptionBinding<bool?>(OptionStore, nullableOptionKey, languageName),
+                Path = new PropertyPath("Value"),
+                UpdateSourceTrigger = UpdateSourceTrigger.Default,
+                Converter = new NullableBoolOptionConverter(onNullValue)
+            };
+
+            AddSearchHandler(checkbox);
 
             var bindingExpression = checkbox.SetBinding(CheckBox.IsCheckedProperty, binding);
             _bindingExpressions.Add(bindingExpression);
@@ -115,7 +153,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
             _bindingExpressions.Add(bindingExpression);
         }
 
-        private protected void BindToOption<T>(ComboBox comboBox, Option2<T> optionKey)
+        private protected void BindToOption<T>(ComboBox comboBox, Option2<T> optionKey, ContentControl label = null)
         {
             var binding = new Binding()
             {
@@ -125,11 +163,16 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
                 ConverterParameter = comboBox
             };
 
+            AddSearchHandler(comboBox);
+
+            if (label is not null)
+                AddSearchHandler(label);
+
             var bindingExpression = comboBox.SetBinding(ComboBox.SelectedIndexProperty, binding);
             _bindingExpressions.Add(bindingExpression);
         }
 
-        private protected void BindToOption<T>(ComboBox comboBox, PerLanguageOption2<T> optionKey, string languageName)
+        private protected void BindToOption<T>(ComboBox comboBox, PerLanguageOption2<T> optionKey, string languageName, ContentControl label = null)
         {
             var binding = new Binding()
             {
@@ -139,7 +182,46 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
                 ConverterParameter = comboBox
             };
 
+            AddSearchHandler(comboBox);
+
+            if (label is not null)
+                AddSearchHandler(label);
+
             var bindingExpression = comboBox.SetBinding(ComboBox.SelectedIndexProperty, binding);
+            _bindingExpressions.Add(bindingExpression);
+        }
+
+        private protected void BindToOption<T>(RadioButton radiobutton, Option2<T> optionKey, T optionValue)
+        {
+            var binding = new Binding()
+            {
+                Source = new OptionBinding<T>(OptionStore, optionKey),
+                Path = new PropertyPath("Value"),
+                UpdateSourceTrigger = UpdateSourceTrigger.Default,
+                Converter = new RadioButtonCheckedConverter(),
+                ConverterParameter = optionValue
+            };
+
+            AddSearchHandler(radiobutton);
+
+            var bindingExpression = radiobutton.SetBinding(RadioButton.IsCheckedProperty, binding);
+            _bindingExpressions.Add(bindingExpression);
+        }
+
+        private protected void BindToOption<T>(RadioButton radioButton, Option2<T?> nullableOptionKey, T optionValue, Func<bool> onNullValue) where T : struct
+        {
+            var binding = new Binding()
+            {
+                Source = new OptionBinding<T?>(OptionStore, nullableOptionKey),
+                Path = new PropertyPath("Value"),
+                UpdateSourceTrigger = UpdateSourceTrigger.Default,
+                Converter = new RadioButtonCheckedConverter<T>(onNullValue),
+                ConverterParameter = optionValue,
+            };
+
+            AddSearchHandler(radioButton);
+
+            var bindingExpression = radioButton.SetBinding(RadioButton.IsCheckedProperty, binding);
             _bindingExpressions.Add(bindingExpression);
         }
 
@@ -153,6 +235,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
                 Converter = new RadioButtonCheckedConverter(),
                 ConverterParameter = optionValue
             };
+
+            AddSearchHandler(radiobutton);
 
             var bindingExpression = radiobutton.SetBinding(RadioButton.IsCheckedProperty, binding);
             _bindingExpressions.Add(bindingExpression);
@@ -173,21 +257,58 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
         internal virtual void Close()
         {
         }
+
+        internal virtual void OnSearch(string searchString)
+        {
+            var shouldScrollIntoView = true;
+            foreach (var handler in _searchHandlers)
+            {
+                if (handler.TryHighlightSearchString(searchString) && shouldScrollIntoView)
+                {
+                    handler.EnsureVisible();
+                    shouldScrollIntoView = false;
+                }
+            }
+        }
+
+        private protected void AddSearchHandler(ComboBox comboBox)
+        {
+            foreach (ComboBoxItem item in comboBox.Items)
+            {
+                AddSearchHandler(item);
+            }
+        }
+
+        private protected void AddSearchHandler(ContentControl control)
+        {
+            Debug.Assert(control.Content is string, $"I don't know how to add keyword search support for the '{control.GetType().Name}' control with content type '{control.Content?.GetType().Name ?? "null"}'");
+            if (control.Content is string content)
+            {
+                _searchHandlers.Add(new OptionPageSearchHandler(control, content));
+            }
+        }
     }
 
-    public class RadioButtonCheckedConverter : IValueConverter
+    public sealed class RadioButtonCheckedConverter : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter,
-            System.Globalization.CultureInfo culture)
-        {
-            return value.Equals(parameter);
-        }
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+            => value.Equals(parameter);
 
-        public object ConvertBack(object value, Type targetType, object parameter,
-            System.Globalization.CultureInfo culture)
-        {
-            return value.Equals(true) ? parameter : Binding.DoNothing;
-        }
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => value.Equals(true) ? parameter : Binding.DoNothing;
+    }
+
+    public sealed class RadioButtonCheckedConverter<T>(Func<bool> onNullValue) : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+            => value switch
+            {
+                null => onNullValue(),
+                _ => value.Equals(parameter),
+            };
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => value.Equals(true) ? parameter : Binding.DoNothing;
     }
 
     public class ComboBoxItemTagToIndexConverter : IValueConverter

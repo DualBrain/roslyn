@@ -5,7 +5,6 @@
 Imports System.Globalization
 Imports System.Text
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -486,7 +485,6 @@ End Namespace
             'Next
         End Sub
 
-
         <WorkItem(542508, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542508")>
         <Fact()>
         Public Sub LocalsWithoutAsClauseInForStatement()
@@ -680,8 +678,8 @@ End Namespace")
 
             ' NamespaceNames and TypeNames do not match SyntaxTrees order.
             ' This is expected.
-            Assert.Equal({"", "N3", "N0", "N", "", "N4", "N"}, comp2.Declarations.NamespaceNames.ToArray())
-            Assert.Equal({"C3", "C0", "S", "C", "C4", "C"}, comp2.Declarations.TypeNames.ToArray())
+            AssertEx.Equal({"", "N3", "N0", "N", "", "N4", "N"}, comp2.Declarations.NamespaceNames.ToArray())
+            AssertEx.Equal({"C3", "C0", "S", "C", "C4", "C"}, comp2.Declarations.TypeNames.ToArray())
 
             ' RemoveSyntaxTrees should preserve order of remaining trees.
             Dim comp3 = comp2.RemoveSyntaxTrees(source0)

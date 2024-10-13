@@ -3,12 +3,12 @@
 ' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Immutable
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Roslyn.Test.Utilities
+Imports Basic.Reference.Assemblies
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
 
@@ -674,7 +674,7 @@ End Namespace
         <WorkItem(537199, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537199")>
         <Fact>
         Public Sub UseTypeInNetModule()
-            Dim mscorlibRef = TestMetadata.Net40.mscorlib
+            Dim mscorlibRef = Net40.References.mscorlib
             Dim module1Ref = TestReferences.SymbolsTests.netModule.netModule1
             Dim text = <literal>
 Class Test
@@ -918,7 +918,6 @@ End Namespace
     End Namespace
     </file>
 </compilation>, {compRef1})
-
 
             Dim ns = DirectCast(comp.SourceModule.GlobalNamespace.GetMembers("SS").Single(), NamespaceSymbol)
             Dim type1 = DirectCast(ns.GetTypeMembers("Goo", 0).Single(), NamedTypeSymbol)
@@ -1515,7 +1514,6 @@ End Structure
         </compilation>, {New VisualBasicCompilationReference(compilation1)})
             CompilationUtils.AssertNoErrors(compilation2)
 
-
             Dim compilation3 = CompilationUtils.CreateCompilationWithMscorlib40AndReferences(
         <compilation name="MultiplyCyclesInStructure05_I">
             <file name="a.vb">
@@ -2108,7 +2106,6 @@ BC31089: Types declared 'Private' must be inside another type.
 Private delegate Sub D11()
                      ~~~
 </expected>)
-
 
             compilation = CompilationUtils.CreateCompilationWithMscorlib40AndVBRuntime(
                <compilation name="Bug4136">
@@ -3200,7 +3197,7 @@ BC37218: Type 'ns.CF2' forwarded to assembly 'ForwardedTypes1, Version=0.0.0.0, 
                 }, TestOptions.ReleaseDll)
 
             ' Exported types in .NET modules cause PEVerify to fail.
-            CompileAndVerify(compilation, verify:=Verification.Fails).VerifyDiagnostics()
+            CompileAndVerify(compilation, verify:=Verification.FailsPEVerify).VerifyDiagnostics()
 
             compilation = CreateCompilationWithMscorlib40AndReferences(emptySource,
                 {

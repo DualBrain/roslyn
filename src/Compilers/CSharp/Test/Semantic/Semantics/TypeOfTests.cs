@@ -6,7 +6,7 @@
 
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
-using Microsoft.CodeAnalysis.Test.Extensions;
+using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
 using Xunit;
 using System.Linq;
@@ -27,7 +27,7 @@ class C
     }
 }
 ";
-            var compilation = CreateCompilationWithMscorlib45(source);
+            var compilation = CreateCompilationWithMscorlib461(source);
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
             var node = (ObjectCreationExpressionSyntax)tree.GetRoot().DescendantNodes().Where(n => n.ToString() == "new C(0)").Last();

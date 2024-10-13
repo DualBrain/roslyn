@@ -4,7 +4,6 @@
 
 Imports System.Collections.Immutable
 Imports Microsoft.CodeAnalysis.PooledObjects
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols.Metadata.PE
@@ -155,7 +154,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
   } // end of property C3::P1
 } // end of class C3
 ]]>
-
 
             Dim compilation1 = CompilationUtils.CreateCompilationWithCustomILSource(
     <compilation name="Test">
@@ -365,7 +363,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
 } // end of class X
 
 ]]>
-
 
             Dim compilation1 = CompilationUtils.CreateCompilationWithCustomILSource(
     <compilation name="Test">

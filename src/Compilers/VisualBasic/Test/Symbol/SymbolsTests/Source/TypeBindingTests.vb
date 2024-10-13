@@ -5,7 +5,6 @@
 Imports System.Globalization
 Imports System.Text
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -13,7 +12,6 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata
 Imports Roslyn.Test.Utilities
-
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
     Public Class TypeBindingTests
@@ -718,7 +716,6 @@ Imports DD=System.Console
 </expected>)
         End Sub
 
-
         <Fact>
         Public Sub ImportAliasesAtProjectLevel()
             Dim options = TestOptions.ReleaseExe.WithGlobalImports(GlobalImport.Parse(
@@ -821,7 +818,6 @@ BC30562: 'S' is ambiguous between declarations in Modules 'TMod, TMod2'.
 
             CompilationUtils.AssertTheseDeclarationDiagnostics(compilation, expectedErrors)
         End Sub
-
 
         <Fact>
         Public Sub GenericTypeNameErrors()

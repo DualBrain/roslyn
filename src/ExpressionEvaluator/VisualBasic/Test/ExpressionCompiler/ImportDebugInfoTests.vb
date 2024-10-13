@@ -9,7 +9,6 @@ Imports Microsoft.CodeAnalysis.CodeGen
 Imports Microsoft.CodeAnalysis.Debugging
 Imports Microsoft.CodeAnalysis.Emit
 Imports Microsoft.CodeAnalysis.ExpressionEvaluator.UnitTests
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
@@ -252,8 +251,7 @@ End Namespace
             Assert.Equal("@" & methodToken1, importStrings.Single())
         End Sub
 
-        <WorkItem(999086, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/999086")>
-        <Fact>
+        <Fact, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/999086")>
         Public Sub BadPdb_InvalidAliasTarget()
             Const source = "
 Public Class C
@@ -288,8 +286,7 @@ End Class
             Assert.Equal("SC", aliases.Keys.Single())
         End Sub
 
-        <WorkItem(999086, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/999086")>
-        <Fact>
+        <Fact, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/999086")>
         Public Sub BadPdb_InvalidAliasName()
             Const source = "
 Public Class C
@@ -594,8 +591,7 @@ End Namespace
                 End Sub)
         End Sub
 
-        <WorkItem(2441, "https://github.com/dotnet/roslyn/issues/2441")>
-        <Fact>
+        <Fact, WorkItem("https://github.com/dotnet/roslyn/issues/2441")>
         Public Sub AssemblyQualifiedNameResolutionWithUnification()
             Const source1 = "
 Imports SI = System.Int32

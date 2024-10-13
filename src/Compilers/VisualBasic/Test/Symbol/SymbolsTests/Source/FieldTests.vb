@@ -5,7 +5,6 @@
 Imports System.Globalization
 Imports System.Text
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -510,7 +509,6 @@ End Class
     </file>
 </compilation>)
 
-
             CompilationUtils.AssertTheseDiagnostics(compilation, <expected>
 BC30002: Type 'abcDef' is not defined.
     Public x, y, z as abcDef
@@ -542,6 +540,7 @@ End Class
         End Sub
 
         <WorkItem(26364, "https://github.com/dotnet/roslyn/issues/26364")>
+        <WorkItem(54799, "https://github.com/dotnet/roslyn/issues/54799")>
         <Fact>
         Public Sub FixedSizeBufferFalse()
             Dim compilation = CompilationUtils.CreateCompilationWithMscorlib40(
@@ -557,8 +556,8 @@ End Structure
             Dim goo = DirectCast(s.GetMember(Of FieldSymbol)("goo"), IFieldSymbol)
 
             Assert.False(goo.IsFixedSizeBuffer)
+            Assert.Equal(0, goo.FixedSize)
         End Sub
-
 
     End Class
 End Namespace

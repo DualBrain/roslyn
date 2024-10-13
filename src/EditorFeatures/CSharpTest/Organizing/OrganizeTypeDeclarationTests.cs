@@ -8,290 +8,343 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis.Editor.Commanding.Commands;
-using Microsoft.CodeAnalysis.Editor.Implementation.Interactive;
 using Microsoft.CodeAnalysis.Editor.Implementation.Organizing;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Editor.UnitTests;
-using Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces;
+using Microsoft.CodeAnalysis.Shared.TestHooks;
 using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
 using Xunit;
 
-namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Organizing
+namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Organizing;
+
+public class OrganizeTypeDeclarationTests : AbstractOrganizerTests
 {
-    public class OrganizeTypeDeclarationTests : AbstractOrganizerTests
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    [InlineData("record class")]
+    [InlineData("record struct")]
+    public async Task TestFieldsWithoutInitializers1(string typeKind)
     {
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestFieldsWithoutInitializers1()
-        {
-            var initial =
-@"class C {
+        var initial =
+$@"{typeKind} C {{
     int A;
     int B;
     int C;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     int A;
     int B;
     int C;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestFieldsWithoutInitializers2()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("struct")]
+    [InlineData("record")]
+    [InlineData("record class")]
+    [InlineData("record struct")]
+    public async Task TestNestedTypes(string typeKind)
+    {
+        var initial =
+$@"class C {{
+    {typeKind} Nested1 {{ }}
+    {typeKind} Nested2 {{ }}
+    int A;
+}}";
+
+        var final =
+$@"class C {{
+    int A;
+    {typeKind} Nested1 {{ }}
+    {typeKind} Nested2 {{ }}
+}}";
+        await CheckAsync(initial, final);
+    }
+
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestFieldsWithoutInitializers2(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int C;
     int B;
     int A;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     int A;
     int B;
     int C;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestFieldsWithInitializers1()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    [InlineData("record struct")]
+    public async Task TestFieldsWithInitializers1(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int C = 0;
     int B;
     int A;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     int A;
     int B;
     int C = 0;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestFieldsWithInitializers2()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestFieldsWithInitializers2(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int C = 0;
     int B = 0;
     int A;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     int A;
     int C = 0;
     int B = 0;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestEventFieldDeclaration()
-        {
-            var initial =
-@"class C {
-    public void Goo() {}     
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestEventFieldDeclaration(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
+    public void Goo() {{}}
     public event EventHandler MyEvent;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     public event EventHandler MyEvent;
-    public void Goo() {}     
-}";
-            await CheckAsync(initial, final);
-        }
+    public void Goo() {{}}
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestEventDeclaration()
-        {
-            var initial =
-@"class C  {
-    public void Goo() {}     
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestEventDeclaration(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C  {{
+    public void Goo() {{}}
     public event EventHandler Event
-    {
-        remove { }
-        add { }
-    }
+    {{
+        remove {{ }}
+        add {{ }}
+    }}
 
-    public static int Property { get; set; }
-}";
+    public static int Property {{ get; set; }}
+}}";
 
-            var final =
-@"class C  {
-    public static int Property { get; set; }
+        var final =
+$@"{typeKind} C  {{
+    public static int Property {{ get; set; }}
     public event EventHandler Event
-    {
-        remove { }
-        add { }
+    {{
+        remove {{ }}
+        add {{ }}
+    }}
+
+    public void Goo() {{}}
+}}";
+        await CheckAsync(initial, final);
     }
 
-    public void Goo() {}     
-}";
-            await CheckAsync(initial, final);
-        }
-
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestOperator()
-        {
-            var initial =
-@"class C  {
-    public void Goo() {}     
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestOperator(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C  {{
+    public void Goo() {{}}
     public static int operator +(Goo<T> a, int b)
-    {
+    {{
         return 1;
-    }
-}";
+    }}
+}}";
 
-            var final =
-@"class C  {
+        var final =
+$@"{typeKind} C  {{
     public static int operator +(Goo<T> a, int b)
-    {
+    {{
         return 1;
+    }}
+    public void Goo() {{}}
+}}";
+        await CheckAsync(initial, final);
     }
-    public void Goo() {}     
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestIndexer()
-        {
-            var initial =
-@"class C  {
-    public void Goo() {}     
-    public T this[int i]
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestIndexer(string typeKind)
     {
-        get
-        {
-            return default(T);
-        }
-    }
-
-    C() {}
-}";
-
-            var final =
-@"class C  {
-    C() {}
+        var initial =
+$@"{typeKind} C  {{
+    public void Goo() {{}}
     public T this[int i]
-    {
+    {{
         get
-        {
+        {{
             return default(T);
-        }
+        }}
+    }}
+
+    C() {{}}
+}}";
+
+        var final =
+$@"{typeKind} C  {{
+    C() {{}}
+    public T this[int i]
+    {{
+        get
+        {{
+            return default(T);
+        }}
+    }}
+
+    public void Goo() {{}}
+}}";
+        await CheckAsync(initial, final);
     }
 
-    public void Goo() {}     
-}";
-            await CheckAsync(initial, final);
-        }
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestConstructorAndDestructors(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C  {{
+    public ~Goo() {{}}
+    enum Days {{Sat, Sun}};
+    public Goo() {{}}
+}}";
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestConstructorAndDestructors()
-        {
-            var initial =
-@"class C  {
-    public ~Goo() {}        
-    enum Days {Sat, Sun};        
-    public Goo() {}  
-}";
+        var final =
+$@"{typeKind} C  {{
+    public Goo() {{}}
+    public ~Goo() {{}}
+    enum Days {{Sat, Sun}};
+}}";
+        await CheckAsync(initial, final);
+    }
 
-            var final =
-@"class C  {
-    public Goo() {}  
-    public ~Goo() {}        
-    enum Days {Sat, Sun};        
-}";
-            await CheckAsync(initial, final);
-        }
-
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInterface()
-        {
-            var initial =
-@"class C  {}
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInterface(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C  {{}}
 interface I
-{
+{{
    void Goo();
-   int Property { get; set; }
+   int Property {{ get; set; }}
    event EventHandler Event;
-}";
+}}";
 
-            var final =
-@"class C  {}
+        var final =
+$@"{typeKind} C  {{}}
 interface I
-{
+{{
    event EventHandler Event;
-   int Property { get; set; }
+   int Property {{ get; set; }}
    void Goo();
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestStaticInstance()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestStaticInstance(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int A;
     static int B;
     int C;
     static int D;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     static int B;
     static int D;
     int A;
     int C;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestAccessibility()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    [InlineData("record struct")]
+    public async Task TestAccessibility(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int A;
     private int B;
     internal int C;
     protected int D;
     public int E;
     protected internal int F;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     public int E;
     protected int D;
     protected internal int F;
     internal int C;
     int A;
     private int B;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestStaticAccessibility()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestStaticAccessibility(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int A1;
     private int B1;
     internal int C1;
@@ -302,10 +355,10 @@ interface I
     static internal int C2;
     static protected int D2;
     static public int E2;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     public static int E2;
     protected static int D2;
     internal static int C2;
@@ -316,63 +369,69 @@ interface I
     internal int C1;
     int A1;
     private int B1;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestGenerics()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestGenerics(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     void B<X,Y>();
     void B<Z>();
     void B();
     void A<X,Y>();
     void A<Z>();
     void A();
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     void A();
     void A<Z>();
     void A<X,Y>();
     void B();
     void B<Z>();
     void B<X,Y>();
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInsidePPRegion()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInsidePPRegion(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
 #if true
     int c;
     int b;
     int a;
 #endif
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
 #if true
     int a;
     int b;
     int c;
 #endif
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInsidePPRegion2()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInsidePPRegion2(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
 #if true
     int z;
     int y;
@@ -383,10 +442,10 @@ interface I
     int b;
     int a;
 #endif
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
 #if true
     int x;
     int y;
@@ -397,15 +456,17 @@ interface I
     int b;
     int c;
 #endif
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInsidePPRegion3()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInsidePPRegion3(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int z;
     int y;
 #if true
@@ -414,10 +475,10 @@ interface I
 #endif
     int b;
     int a;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     int y;
     int z;
 #if true
@@ -426,161 +487,171 @@ interface I
 #endif
     int a;
     int b;
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInsidePPRegion4()
-        {
-            var initial =
-@"class C {
-    int c() {
-    }
-    int b {
-    }
-    int a {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInsidePPRegion4(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
+    int c() {{
+    }}
+    int b {{
+    }}
+    int a {{
 #if true
 #endif
-    }
-}";
+    }}
+}}";
 
-            var final =
-@"class C {
-    int a {
+        var final =
+$@"{typeKind} C {{
+    int a {{
 #if true
 #endif
+    }}
+    int b {{
+    }}
+    int c() {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-    int b {
-    }
-    int c() {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInsidePPRegion5()
-        {
-            var initial =
-@"class C {
-    int c() {
-    }
-    int b {
-    }
-    int a {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInsidePPRegion5(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
+    int c() {{
+    }}
+    int b {{
+    }}
+    int a {{
 #if true
 #else
 #endif
-    }
-}";
+    }}
+}}";
 
-            var final =
-@"class C {
-    int a {
+        var final =
+$@"{typeKind} C {{
+    int a {{
 #if true
 #else
 #endif
+    }}
+    int b {{
+    }}
+    int c() {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-    int b {
-    }
-    int c() {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestInsidePPRegion6()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestInsidePPRegion6(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
 #region
-    int e() {
-    }
-    int d() {
-    }
-    int c() {
+    int e() {{
+    }}
+    int d() {{
+    }}
+    int c() {{
 #region
-    }
+    }}
 #endregion
-    int b {
-    }
-    int a {
-    }
+    int b {{
+    }}
+    int a {{
+    }}
 #endregion
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
 #region
-    int d() {
-    }
-    int e() {
-    }
-    int c() {
+    int d() {{
+    }}
+    int e() {{
+    }}
+    int c() {{
 #region
-    }
+    }}
 #endregion
-    int a {
-    }
-    int b {
-    }
+    int a {{
+    }}
+    int b {{
+    }}
 #endregion
-}";
-            await CheckAsync(initial, final);
-        }
+}}";
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestPinned()
-        {
-            var initial =
-@"class C {
-    int z() {
-    }
-    int y() {
-    }
-    int x() {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestPinned(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
+    int z() {{
+    }}
+    int y() {{
+    }}
+    int x() {{
 #if true
-    }
+    }}
     int n;
     int m;
-    int c() {
+    int c() {{
 #endif
-    }
-    int b() {
-    }
-    int a() {
-    }
-}";
+    }}
+    int b() {{
+    }}
+    int a() {{
+    }}
+}}";
 
-            var final =
-@"class C {
-    int y() {
-    }
-    int z() {
-    }
-    int x() {
+        var final =
+$@"{typeKind} C {{
+    int y() {{
+    }}
+    int z() {{
+    }}
+    int x() {{
 #if true
-    }
+    }}
     int m;
     int n;
-    int c() {
+    int c() {{
 #endif
+    }}
+    int a() {{
+    }}
+    int b() {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-    int a() {
-    }
-    int b() {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestSensitivity()
-        {
-            var initial =
-@"class C {
+    [Theory, Trait(Traits.Feature, Traits.Features.Organizing)]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestSensitivity(string typeKind)
+    {
+        var initial =
+$@"{typeKind} C {{
     int Bb;
     int B;
     int bB;
@@ -620,10 +691,10 @@ interface I
     int cc;
     int cC;
     int CC;
-}";
+}}";
 
-            var final =
-@"class C {
+        var final =
+$@"{typeKind} C {{
     int a;
     int A;
     int aa;
@@ -663,447 +734,461 @@ interface I
     int あア;
     int あｱ;
     int ああ;
-}";
+}}";
 
-            await CheckAsync(initial, final);
-        }
-
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestWhitespaceBetweenMethods1()
-        {
-            var initial =
-@"class Program
-{
-    void B()
-    {
+        await CheckAsync(initial, final);
     }
+
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestWhitespaceBetweenMethods1(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
+    void B()
+    {{
+    }}
 
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
     void A()
-    {
-    }
+    {{
+    }}
 
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestWhitespaceBetweenMethods2()
-        {
-            var initial =
-@"class Program
-{
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestWhitespaceBetweenMethods2(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
     void B()
-    {
-    }
-
-
-    void A()
-    {
-    }
-}";
-
-            var final =
-@"class Program
-{
-    void A()
-    {
-    }
-
-
-    void B()
-    {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
-
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestWhitespaceBetweenMethods3()
-        {
-            var initial =
-@"class Program
-{
-
-    void B()
-    {
-    }
-
-    void A()
-    {
-    }
-}";
-
-            var final =
-@"class Program
-{
-
-    void A()
-    {
-    }
-
-    void B()
-    {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
-
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestWhitespaceBetweenMethods4()
-        {
-            var initial =
-@"class Program
-{
-
-
-    void B()
-    {
-    }
-
-    void A()
-    {
-    }
-}";
-
-            var final =
-@"class Program
-{
+    {{
+    }}
 
 
     void A()
-    {
-    }
+    {{
+    }}
+}}";
 
-    void B()
-    {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
-
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestWhitespaceBetweenMethods5()
-        {
-            var initial =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
+    void A()
+    {{
+    }}
 
 
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
+
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestWhitespaceBetweenMethods3(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
+
+    void B()
+    {{
+    }}
+
+    void A()
+    {{
+    }}
+}}";
+
+        var final =
+$@"{typeKind} Program
+{{
+
+    void A()
+    {{
+    }}
+
+    void B()
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
+    }
+
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestWhitespaceBetweenMethods4(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
+
+
+    void B()
+    {{
+    }}
+
+    void A()
+    {{
+    }}
+}}";
+
+        var final =
+$@"{typeKind} Program
+{{
 
 
     void A()
-    {
+    {{
+    }}
+
+    void B()
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
 
-            var final =
-@"class Program
-{
-
-
-    void A()
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestWhitespaceBetweenMethods5(string typeKind)
     {
-    }
+        var initial =
+$@"{typeKind} Program
+{{
 
 
     void B()
-    {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
+    {{
+    }}
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestWhitespaceBetweenMethods6()
-        {
-            var initial =
-@"class Program
-{
+
+    void A()
+    {{
+    }}
+}}";
+
+        var final =
+$@"{typeKind} Program
+{{
+
+
+    void A()
+    {{
+    }}
 
 
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
+
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestWhitespaceBetweenMethods6(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
+
+
+    void B()
+    {{
+    }}
 
 
 
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
 
 
     void A()
-    {
-    }
+    {{
+    }}
 
 
 
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestMoveComments1()
-        {
-            var initial =
-@"class Program
-{
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestMoveComments1(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
     // B
     void B()
-    {
-    }
+    {{
+    }}
 
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
     void A()
-    {
-    }
+    {{
+    }}
 
     // B
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestMoveComments2()
-        {
-            var initial =
-@"class Program
-{
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestMoveComments2(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
     // B
     void B()
-    {
-    }
+    {{
+    }}
 
     // A
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
     // A
     void A()
-    {
-    }
+    {{
+    }}
 
     // B
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestMoveDocComments1()
-        {
-            var initial =
-@"class Program
-{
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestMoveDocComments1(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
     /// B
     void B()
-    {
-    }
+    {{
+    }}
 
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
     void A()
-    {
-    }
+    {{
+    }}
 
     /// B
     void B()
-    {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
-
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestMoveDocComments2()
-        {
-            var initial =
-@"class Program
-{
-    /// B
-
-    void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
 
-    void A()
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestMoveDocComments2(string typeKind)
     {
-    }
-}";
-
-            var final =
-@"class Program
-{
-    void A()
-    {
-    }
-
+        var initial =
+$@"{typeKind} Program
+{{
     /// B
 
     void B()
-    {
-    }
-}";
-            await CheckAsync(initial, final);
-        }
+    {{
+    }}
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestDontMoveBanner()
-        {
-            var initial =
-@"class Program
-{
+    void A()
+    {{
+    }}
+}}";
+
+        var final =
+$@"{typeKind} Program
+{{
+    void A()
+    {{
+    }}
+
+    /// B
+
+    void B()
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
+    }
+
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestDoNotMoveBanner(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
     // Banner
 
     void B()
-    {
-    }
+    {{
+    }}
 
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
     // Banner
 
     void A()
-    {
-    }
+    {{
+    }}
 
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [WorkItem(537614, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
-        [Fact]
-        public async Task TestDontMoveBanner2()
-        {
-            var initial =
-@"class Program
-{
+    [Theory, WorkItem("http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537614")]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestDoNotMoveBanner2(string typeKind)
+    {
+        var initial =
+$@"{typeKind} Program
+{{
     // Banner
 
     // More banner
     // Bannery stuff
 
     void B()
-    {
-    }
+    {{
+    }}
 
     void A()
-    {
-    }
-}";
+    {{
+    }}
+}}";
 
-            var final =
-@"class Program
-{
+        var final =
+$@"{typeKind} Program
+{{
     // Banner
 
     // More banner
     // Bannery stuff
 
     void A()
-    {
-    }
+    {{
+    }}
 
     void B()
-    {
+    {{
+    }}
+}}";
+        await CheckAsync(initial, final);
     }
-}";
-            await CheckAsync(initial, final);
-        }
 
-        [WpfFact]
-        [Trait(Traits.Feature, Traits.Features.Organizing)]
-        [Trait(Traits.Feature, Traits.Features.Interactive)]
-        public void OrganizingCommandsDisabledInSubmission()
-        {
-            using var workspace = TestWorkspace.Create(XElement.Parse(@"
-                <Workspace>
-                    <Submission Language=""C#"" CommonReferences=""true"">  
-                        class C
-                        {
-                            object $$goo;
-                        }
-                    </Submission>
-                </Workspace> "),
-                workspaceKind: WorkspaceKind.Interactive,
-                composition: EditorTestCompositions.EditorFeaturesWpf);
-            // Force initialization.
-            workspace.GetOpenDocumentIds().Select(id => workspace.GetTestDocument(id).GetTextView()).ToList();
+    [WpfFact]
+    [Trait(Traits.Feature, Traits.Features.Organizing)]
+    [Trait(Traits.Feature, Traits.Features.Interactive)]
+    public void OrganizingCommandsDisabledInSubmission()
+    {
+        using var workspace = EditorTestWorkspace.Create(XElement.Parse("""
+            <Workspace>
+                <Submission Language="C#" CommonReferences="true">
+                    class C
+                    {
+                        object $$goo;
+                    }
+                </Submission>
+            </Workspace>
+            """),
+            workspaceKind: WorkspaceKind.Interactive,
+            composition: EditorTestCompositions.EditorFeaturesWpf);
+        // Force initialization.
+        workspace.GetOpenDocumentIds().Select(id => workspace.GetTestDocument(id).GetTextView()).ToList();
 
-            var textView = workspace.Documents.Single().GetTextView();
+        var textView = workspace.Documents.Single().GetTextView();
 
-            var handler = new OrganizeDocumentCommandHandler(workspace.ExportProvider.GetExportedValue<IThreadingContext>());
+        var handler = new OrganizeDocumentCommandHandler(
+            workspace.GetService<IThreadingContext>(),
+            workspace.ExportProvider.GetExportedValue<IAsynchronousOperationListenerProvider>());
 
-            var state = handler.GetCommandState(new SortAndRemoveUnnecessaryImportsCommandArgs(textView, textView.TextBuffer));
-            Assert.True(state.IsUnspecified);
+        var state = handler.GetCommandState(new SortAndRemoveUnnecessaryImportsCommandArgs(textView, textView.TextBuffer));
+        Assert.True(state.IsUnspecified);
 
-            state = handler.GetCommandState(new OrganizeDocumentCommandArgs(textView, textView.TextBuffer));
-            Assert.True(state.IsUnspecified);
-        }
+        state = handler.GetCommandState(new OrganizeDocumentCommandArgs(textView, textView.TextBuffer));
+        Assert.True(state.IsUnspecified);
     }
 }

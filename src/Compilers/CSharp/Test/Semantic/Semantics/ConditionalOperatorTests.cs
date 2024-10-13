@@ -6,7 +6,6 @@ using System.Linq;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
-using Microsoft.CodeAnalysis.Test.Extensions;
 using Microsoft.CodeAnalysis.Test.Utilities;
 using Roslyn.Test.Utilities;
 using Xunit;
@@ -198,6 +197,33 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests
             TestConditional("1 ? null : null", null, parseOptions: TestOptions.Regular.WithLanguageVersion(MessageID.IDS_FeatureTargetTypedConditional.RequiredVersion()),
                 Diagnostic(ErrorCode.ERR_NoImplicitConv, "1").WithArguments("int", "bool")
                 );
+        }
+
+        [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/67975")]
+        public void SumTypeInTuple()
+        {
+            var source = """
+                #nullable enable
+                class C1 { }
+                class C2 { }
+                class C3 { }
+                struct SumType<T1, T2> where T1 : notnull where T2 : notnull
+                {
+                    public static implicit operator SumType<T1, T2>(T1 _) => throw null!;
+                    public static implicit operator SumType<T1, T2>(T2 _) => throw null!;
+                }
+                class D
+                {
+                    public (C1, SumType<C2, C3>) F;
+
+                    public void M(C1 one, C2? two, C3? three)
+                    {
+                        if (three == null) return;
+                        F = (one, two is not null ? two : three);
+                    }
+                }
+                """;
+            CreateCompilation(source).VerifyDiagnostics();
         }
 
         [WorkItem(545408, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545408")]
@@ -823,7 +849,6 @@ class Program
             verifier.VerifyIL("Program.Main", expectedIL);
         }
 
-
         [Fact]
         public void TestBug7196c()
         {
@@ -1252,7 +1277,7 @@ class C
 }}
 
 class D<T> {{ }}
-public enum color {{ Red, Blue, Green }};
+public enum @color {{ Red, Blue, Green }};
 interface I<in T, out U> {{ }}";
 
             var tree = Parse(source, options: parseOptions);
@@ -1281,7 +1306,6 @@ interface I<in T, out U> {{ }}";
                 }
             }
         }
-
 
         [Fact, WorkItem(4028, "https://github.com/dotnet/roslyn/issues/4028")]
         public void ConditionalAccessToEvent_01()

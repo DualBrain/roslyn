@@ -8,73 +8,83 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Test.Utilities;
 using Xunit;
 
-namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Organizing
+namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Organizing;
+
+[Trait(Traits.Feature, Traits.Features.Organizing)]
+public class OrganizeModifiersTests : AbstractOrganizerTests
 {
-    public class OrganizeModifiersTests : AbstractOrganizerTests
+    [Theory]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestTypes1(string typeKind)
     {
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestTypes1()
-        {
-            var initial =
-@"static public class C {
-}";
-            var final =
-@"public static class C {
-}";
+        var initial =
+$@"static public {typeKind} C {{
+}}";
+        var final =
+$@"public static {typeKind} C {{
+}}";
 
-            await CheckAsync(initial, final);
-        }
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestTypes2()
-        {
-            var initial =
-@"public static class D {
-}";
-            var final =
-@"public static class D {
-}";
+    [Theory]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestTypes2(string typeKind)
+    {
+        var initial =
+$@"public static {typeKind} D {{
+}}";
+        var final =
+$@"public static {typeKind} D {{
+}}";
 
-            await CheckAsync(initial, final);
-        }
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestTypes3()
-        {
-            var initial =
-@"public static partial class E {
-}";
-            var final =
-@"public static partial class E {
-}";
+    [Theory]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestTypes3(string typeKind)
+    {
+        var initial =
+$@"public static partial {typeKind} E {{
+}}";
+        var final =
+$@"public static partial {typeKind} E {{
+}}";
 
-            await CheckAsync(initial, final);
-        }
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestTypes4()
-        {
-            var initial =
-@"static public partial class F {
-}";
-            var final =
-@"public static partial class F {
-}";
+    [Theory]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestTypes4(string typeKind)
+    {
+        var initial =
+$@"static public partial {typeKind} F {{
+}}";
+        var final =
+$@"public static partial {typeKind} F {{
+}}";
 
-            await CheckAsync(initial, final);
-        }
+        await CheckAsync(initial, final);
+    }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Organizing)]
-        public async Task TestTypes5()
-        {
-            var initial =
-@"unsafe public static class F {
-}";
-            var final =
-@"public static unsafe class F {
-}";
+    [Theory]
+    [InlineData("class")]
+    [InlineData("record")]
+    public async Task TestTypes5(string typeKind)
+    {
+        var initial =
+$@"unsafe public static {typeKind} F {{
+}}";
+        var final =
+$@"public static unsafe {typeKind} F {{
+}}";
 
-            await CheckAsync(initial, final);
-        }
+        await CheckAsync(initial, final);
     }
 }

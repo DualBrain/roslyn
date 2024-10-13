@@ -3,7 +3,7 @@
 ' See the LICENSE file in the project root for more information.
 
 Imports Microsoft.CodeAnalysis
-Imports Microsoft.CodeAnalysis.Test.Extensions
+Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
@@ -199,7 +199,6 @@ BC31396: 'ArgIterator' cannot be made nullable, and cannot be used as the data t
 ]]>
     </expected>)
 
-
                 Dim tree As SyntaxTree = (From t In compilation.SyntaxTrees Where t.FilePath = "a.vb").Single()
                 Dim semanticModel = compilation.GetSemanticModel(tree)
 
@@ -275,7 +274,6 @@ BC31396: 'ArgIterator' cannot be made nullable, and cannot be used as the data t
             Next
 
         End Sub
-
 
         <Fact>
         Public Sub Test3()
@@ -407,7 +405,6 @@ BC36642: Option Strict On requires each lambda expression parameter to be declar
                           ~
 </expected>)
         End Sub
-
 
         <Fact()>
         Public Sub Test5()

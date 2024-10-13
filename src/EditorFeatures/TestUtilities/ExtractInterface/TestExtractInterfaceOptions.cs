@@ -7,10 +7,12 @@
 using System;
 using System.Collections.Generic;
 using System.Composition;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.CodeGeneration;
 using Microsoft.CodeAnalysis.ExtractInterface;
 using Microsoft.CodeAnalysis.Host.Mef;
-using Microsoft.CodeAnalysis.LanguageServices;
+using Microsoft.CodeAnalysis.LanguageService;
 using Microsoft.CodeAnalysis.Notification;
 
 namespace Microsoft.CodeAnalysis.Editor.UnitTests.ExtractInterface
@@ -44,7 +46,8 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ExtractInterface
             List<string> conflictingTypeNames,
             string defaultNamespace,
             string generatedNameTypeParameterSuffix,
-            string languageName)
+            string languageName,
+            CancellationToken cancellationToken)
         {
             this.AllExtractableMembers = extractableMembers;
             this.DefaultInterfaceName = defaultInterfaceName;

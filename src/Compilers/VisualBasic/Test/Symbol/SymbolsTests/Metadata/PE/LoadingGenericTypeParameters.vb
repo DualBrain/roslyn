@@ -5,14 +5,13 @@
 Imports System.Runtime.CompilerServices
 Imports CompilationCreationTestHelpers
 Imports Microsoft.CodeAnalysis.ImmutableArrayExtensions
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Roslyn.Test.Utilities
-
+Imports Basic.Reference.Assemblies
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
 
@@ -20,7 +19,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
 
         <Fact>
         Public Sub Test1()
-            Dim assembly = MetadataTestHelpers.LoadFromBytes(TestMetadata.ResourcesNet40.mscorlib)
+            Dim assembly = MetadataTestHelpers.LoadFromBytes(Net40.Resources.mscorlib)
             Dim module0 = assembly.Modules(0)
 
             Dim objectType = module0.GlobalNamespace.GetMembers("System").
@@ -173,7 +172,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
             Assert.True(T.HasReferenceTypeConstraint)
             Assert.False(T.HasValueTypeConstraint)
             Assert.Equal(VarianceKind.Out, T.Variance)
-
 
             Dim I101 = module0.GlobalNamespace.GetTypeMembers("I101").Single()
             Dim I102 = module0.GlobalNamespace.GetTypeMembers("I102").Single()

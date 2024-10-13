@@ -8,7 +8,6 @@ Imports System.IO
 Imports System.Linq
 Imports System.Text
 Imports System.Xml.Linq
-Imports Microsoft.CodeAnalysis.Test.Extensions
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
@@ -295,7 +294,6 @@ End Module
 
             compilation.VerifyDiagnostics()
         End Sub
-
 
         <Fact>
         Public Sub ImplicitInLambdaInInitializer()
@@ -608,7 +606,6 @@ BC30616: Variable 'X' hides a variable in an enclosing block.
 ]]></expected>)
         End Sub
 
-
         <Fact>
         Public Sub HidingEnclosingBlock3()
             Dim compilation = CompilationUtils.CreateCompilationWithMscorlib40AndVBRuntime(
@@ -822,8 +819,6 @@ done
             compilation.VerifyDiagnostics()
         End Sub
 
-
-
 #Region "GetSemanticInfo Tests"
 
         <Fact>
@@ -938,7 +933,7 @@ done
             expression:="x + 1",
             expectedTypeName:="System.Int32",
             symbolKind:=SymbolKind.Method,
-            expectedSymbol:="Function System.Int32.op_Addition(left As System.Int32, right As System.Int32) As System.Int32")
+            expectedSymbol:="Function System.Int32.op_CheckedAddition(left As System.Int32, right As System.Int32) As System.Int32")
         End Sub
 
 #End Region

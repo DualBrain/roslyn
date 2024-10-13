@@ -2,8 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-#nullable disable
-
 using System;
 using System.ComponentModel.Composition;
 using System.Diagnostics.CodeAnalysis;
@@ -21,7 +19,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename.HighlightTag
     internal class RenameConflictTagDefinition : MarkerFormatDefinition
     {
         public static double StrokeThickness => 1.5;
-        public static double[] StrokeDashArray => new[] { 8.0, 4.0 };
+        public static double[] StrokeDashArray => [8.0, 4.0];
 
         [ImportingConstructor]
         [Obsolete(MefConstruction.ImportingConstructorMessage, error: true)]

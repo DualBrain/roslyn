@@ -11,8 +11,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.ChangeSignature;
 using Microsoft.CodeAnalysis.Editor.UnitTests.CodeActions;
-using Microsoft.CodeAnalysis.Notification;
-using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Test.Utilities;
 using Microsoft.CodeAnalysis.Test.Utilities.ChangeSignature;
 using Microsoft.CodeAnalysis.Text;
@@ -60,7 +58,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
                     renameSpans: ImmutableArray<TextSpan>.Empty,
                     warningSpans: ImmutableArray<TextSpan>.Empty,
                     navigationSpans: ImmutableArray<TextSpan>.Empty,
-                    parameters: default);
+                    parameters: null);
             }
             else
             {
@@ -74,7 +72,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
             bool expectedSuccess = true,
             int[] updatedSignature = null,
             string expectedUpdatedInvocationDocumentCode = null,
-            string expectedErrorText = null,
+            ChangeSignatureFailureKind? expectedFailureReason = null,
             int? totalParameters = null,
             bool verifyNoDiagnostics = false,
             ParseOptions parseOptions = null,
@@ -83,7 +81,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
             => await TestChangeSignatureViaCommandAsync(languageName, markup,
                 updatedSignature?.Select(i => new AddedParameterOrExistingIndex(i)).ToArray(),
                 expectedSuccess, expectedUpdatedInvocationDocumentCode,
-                expectedErrorText,
+                expectedFailureReason,
                 totalParameters,
                 verifyNoDiagnostics,
                 parseOptions,
@@ -96,57 +94,54 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
             AddedParameterOrExistingIndex[] updatedSignature,
             bool expectedSuccess = true,
             string expectedUpdatedInvocationDocumentCode = null,
-            string expectedErrorText = null,
+            ChangeSignatureFailureKind? expectedFailureReason = null,
             int? totalParameters = null,
             bool verifyNoDiagnostics = false,
             ParseOptions parseOptions = null,
             OptionsCollection options = null,
             int expectedSelectedIndex = -1)
         {
-            using (var testState = ChangeSignatureTestState.Create(markup, languageName, parseOptions, options))
+            using var testState = ChangeSignatureTestState.Create(markup, languageName, parseOptions, options);
+            testState.TestChangeSignatureOptionsService.UpdatedSignature = updatedSignature;
+            var result = await testState.ChangeSignatureAsync().ConfigureAwait(false);
+
+            if (expectedSuccess)
             {
-                testState.TestChangeSignatureOptionsService.UpdatedSignature = updatedSignature;
-                var result = testState.ChangeSignature();
+                Assert.True(result.Succeeded);
+                Assert.Null(result.ChangeSignatureFailureKind);
+            }
+            else
+            {
+                Assert.False(result.Succeeded);
 
-                if (expectedSuccess)
+                if (expectedFailureReason != null)
                 {
-                    Assert.True(result.Succeeded);
-                    Assert.Null(testState.ErrorMessage);
+                    Assert.Equal(expectedFailureReason, result.ChangeSignatureFailureKind);
                 }
-                else
+            }
+
+            // Allow testing of invocation document regardless of success/failure
+            if (expectedUpdatedInvocationDocumentCode != null)
+            {
+                var updatedInvocationDocument = result.UpdatedSolution.GetDocument(testState.InvocationDocument.Id);
+                var updatedCode = (await updatedInvocationDocument.GetTextAsync()).ToString();
+                Assert.Equal(expectedUpdatedInvocationDocumentCode, updatedCode);
+            }
+
+            if (verifyNoDiagnostics)
+            {
+                var diagnostics = (await testState.InvocationDocument.GetSemanticModelAsync()).GetDiagnostics();
+
+                if (diagnostics.Length > 0)
                 {
-                    Assert.False(result.Succeeded);
-
-                    if (expectedErrorText != null)
-                    {
-                        Assert.Equal(expectedErrorText, testState.ErrorMessage);
-                        Assert.Equal(NotificationSeverity.Error, testState.ErrorSeverity);
-                    }
+                    Assert.True(false, CreateDiagnosticsString(diagnostics, updatedSignature, testState.InvocationDocument, totalParameters, (await testState.InvocationDocument.GetTextAsync()).ToString()));
                 }
+            }
 
-                // Allow testing of invocation document regardless of success/failure
-                if (expectedUpdatedInvocationDocumentCode != null)
-                {
-                    var updatedInvocationDocument = result.UpdatedSolution.GetDocument(testState.InvocationDocument.Id);
-                    var updatedCode = (await updatedInvocationDocument.GetTextAsync()).ToString();
-                    Assert.Equal(expectedUpdatedInvocationDocumentCode, updatedCode);
-                }
-
-                if (verifyNoDiagnostics)
-                {
-                    var diagnostics = (await testState.InvocationDocument.GetSemanticModelAsync()).GetDiagnostics();
-
-                    if (diagnostics.Length > 0)
-                    {
-                        Assert.True(false, CreateDiagnosticsString(diagnostics, updatedSignature, testState.InvocationDocument, totalParameters, (await testState.InvocationDocument.GetTextAsync()).ToString()));
-                    }
-                }
-
-                if (expectedSelectedIndex != -1)
-                {
-                    var parameterConfiguration = await testState.GetParameterConfigurationAsync();
-                    Assert.Equal(expectedSelectedIndex, parameterConfiguration.SelectedIndex);
-                }
+            if (expectedSelectedIndex != -1)
+            {
+                var parameterConfiguration = await testState.GetParameterConfigurationAsync();
+                Assert.Equal(expectedSelectedIndex, parameterConfiguration.SelectedIndex);
             }
         }
 
@@ -198,11 +193,11 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
         /// </summary>
         /// <param name="signaturePartCounts">A four element array containing [s, m, n, p] as 
         /// described above.</param>
-        public static IEnumerable<object> GetAllSignatureSpecificationsForTheory(int[] signaturePartCounts)
+        public static IEnumerable<object[]> GetAllSignatureSpecificationsForTheory(int[] signaturePartCounts)
         {
             Assert.Equal(4, signaturePartCounts.Length);
-            Assert.True(signaturePartCounts[0] == 0 || signaturePartCounts[0] == 1);
-            Assert.True(signaturePartCounts[3] == 0 || signaturePartCounts[3] == 1);
+            Assert.True(signaturePartCounts[0] is 0 or 1);
+            Assert.True(signaturePartCounts[3] is 0 or 1);
 
             var totalParameters = signaturePartCounts[0] + signaturePartCounts[1] + signaturePartCounts[2] + signaturePartCounts[3];
 
@@ -221,7 +216,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
             var regularParameterArrangements = GetPermutedSubsets(regularParameterStartIndex, signaturePartCounts[1]);
             var defaultValueParameterArrangements = GetPermutedSubsets(defaultValueParameterStartIndex, signaturePartCounts[2]);
 
-            var startArray = signaturePartCounts[0] == 0 ? Array.Empty<int>() : new[] { 0 };
+            var startArray = signaturePartCounts[0] == 0 ? Array.Empty<int>() : [0];
 
             foreach (var regularParameterPart in regularParameterArrangements)
             {
@@ -253,7 +248,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
         {
             if (!list.Any())
             {
-                yield return SpecializedCollections.EmptyEnumerable<int>();
+                yield return [];
                 yield break;
             }
 
@@ -287,9 +282,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
         private static IEnumerable<IEnumerable<int>> GetSubsets(IEnumerable<int> list)
         {
             if (!list.Any())
-            {
-                return SpecializedCollections.SingletonEnumerable(SpecializedCollections.EmptyEnumerable<int>());
-            }
+                return [[]];
 
             var firstElement = list.Take(1);
 
